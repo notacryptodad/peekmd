@@ -262,6 +262,28 @@ export function buildApp(opts?: AppOptions) {
     }
   });
 
+  // GET /api/stripe/portal — redirect to Stripe Customer Portal
+  app.get('/api/stripe/portal', async (request, reply) => {
+    const authorization = request.headers.authorization;
+    if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+      return reply.status(401).send({ error: 'Stripe API key required' });
+    }
+    const apiKey = authorization.replace(/^Bearer\s+/i, '');
+    const keyRecord = await stripe.validateApiKey(apiKey);
+    if (!keyRecord) {
+      return reply.status(401).send({ error: 'Invalid API key' });
+    }
+    try {
+      const result = await stripe.createPortalSession(keyRecord.stripeCustomerId, baseUrl);
+      return reply.redirect(result.url, 303);
+    } catch (err) {
+      return reply.status(500).send({
+        error: 'portal_failed',
+        message: (err as Error).message,
+      });
+    }
+  });
+
   // GET /api/billing/status — Stripe billing status
   app.get('/api/billing/status', async (request, reply) => {
     const authorization = request.headers.authorization;

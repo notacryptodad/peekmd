@@ -501,6 +501,41 @@ describe('peekmd API', () => {
     });
   });
 
+  // ─── Stripe Customer Portal ────────────────────────────────
+
+  describe('GET /api/stripe/portal', () => {
+    it('redirects to portal URL for valid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/stripe/portal',
+        headers: { authorization: 'Bearer sk_test_valid' },
+      });
+      expect(res.statusCode).toBe(303);
+      expect(res.headers.location).toContain('portal=mock');
+      expect(res.headers.location).toContain('customer=cus_test123');
+    });
+
+    it('rejects missing API key', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/stripe/portal',
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects invalid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/stripe/portal',
+        headers: { authorization: 'Bearer sk_test_bad' },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
   // ─── Pricing ────────────────────────────────────────────────
 
   describe('GET /api/pricing', () => {

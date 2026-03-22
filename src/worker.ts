@@ -336,6 +336,23 @@ export default {
       return handleBurn(burnMatch[1], store);
     }
 
+    // Stripe Customer Portal
+    if (url.pathname === '/api/stripe/portal' && request.method === 'GET') {
+      const authorization = request.headers.get('authorization');
+      if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+        return json({ error: 'Stripe API key required' }, 401);
+      }
+      const apiKey = authorization.replace(/^Bearer\s+/i, '');
+      const keyRecord = await stripe.validateApiKey(apiKey);
+      if (!keyRecord) return json({ error: 'Invalid API key' }, 401);
+      try {
+        const result = await stripe.createPortalSession(keyRecord.stripeCustomerId, baseUrl);
+        return Response.redirect(result.url, 303);
+      } catch (err) {
+        return json({ error: 'portal_failed', message: (err as Error).message }, 500);
+      }
+    }
+
     if (url.pathname === '/api/billing/status' && request.method === 'GET') {
       const authorization = request.headers.get('authorization');
       if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {

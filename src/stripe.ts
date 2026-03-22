@@ -28,12 +28,17 @@ export interface CheckoutCallbackResult {
   customerId: string;
 }
 
+export interface PortalSessionResult {
+  url: string;
+}
+
 export interface StripeService {
   validateApiKey(key: string): Promise<ApiKeyRecord | undefined>;
   recordUsage(customerId: string, pages?: number): Promise<void>;
   getBillingStatus(customerId: string): Promise<BillingStatus>;
   createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult>;
   handleCheckoutCallback(sessionId: string): Promise<CheckoutCallbackResult>;
+  createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult>;
   isConfigured(): boolean;
 }
 
@@ -156,6 +161,14 @@ export class StripeClient implements StripeService {
     this.keyStore.add(apiKey, customerId);
     return { apiKey, customerId };
   }
+
+  async createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult> {
+    const session = await this.stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl,
+    });
+    return { url: session.url };
+  }
 }
 
 /**
@@ -212,5 +225,9 @@ export class MockStripeService implements StripeService {
     this.keyStore.add(apiKey, session.customerId);
     this.checkoutSessions.delete(sessionId);
     return { apiKey, customerId: session.customerId };
+  }
+
+  async createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult> {
+    return { url: `${returnUrl}?portal=mock&customer=${customerId}` };
   }
 }
