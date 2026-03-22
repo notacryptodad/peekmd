@@ -417,6 +417,14 @@ pre {
 .feature { text-align: center; }
 .feature dt { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
 .feature dd { color: #94a3b8; font-size: 0.85em; }
+.demo-btn {
+  display: inline-block; margin-top: 2em; padding: 12px 28px;
+  background: #60a5fa; color: #1a1a2e; font-weight: 600; font-size: 1em;
+  border: none; border-radius: 8px; cursor: pointer; transition: background 0.15s;
+  text-decoration: none;
+}
+.demo-btn:hover { background: #93c5fd; }
+.demo-btn:disabled { opacity: 0.6; cursor: wait; }
 </style>
 </head>
 <body>
@@ -437,7 +445,19 @@ curl -X POST ${baseUrl}/api/create \\
     <div class="feature"><dt>Auto-expiring</dt><dd>5m to permanent</dd></div>
     <div class="feature"><dt>Burn after reading</dt><dd>One-click delete</dd></div>
   </dl>
+  <button class="demo-btn" id="demo-btn">View Demo</button>
 </div>
+<script>
+document.getElementById('demo-btn').addEventListener('click', function() {
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = 'Creating demo...';
+  fetch('${baseUrl}/api/demo', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.url) window.location.href = d.url; else throw new Error(d.error); })
+    .catch(function() { btn.disabled = false; btn.textContent = 'View Demo'; });
+});
+</script>
 </body>
 </html>`;
 }

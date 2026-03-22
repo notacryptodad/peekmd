@@ -10,6 +10,7 @@ import type { StripeService } from './stripe.js';
 import { MockStripeService, InMemoryApiKeyStore, StripeClient } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
+import { DEMO_MARKDOWN } from './demo.js';
 
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
@@ -177,6 +178,18 @@ export function buildApp(opts?: AppOptions) {
       expiresAt: expiresAt === 0 ? null : new Date(expiresAt).toISOString(),
       tier,
     });
+  });
+
+  // POST /api/demo — create a demo page with sample markdown
+  app.post('/api/demo', async (_request, reply) => {
+    const slug = nanoid(SLUG_LENGTH);
+    const now = Date.now();
+    const ttlSec = TIER_CONFIGS.free.maxTtlSec;
+    const expiresAt = now + ttlSec * 1000;
+    const html = renderMarkdown(DEMO_MARKDOWN, sanitize);
+    await store.set({ slug, html, markdown: DEMO_MARKDOWN, createdAt: now, expiresAt, tier: 'free' });
+    const url = `${baseUrl}/${slug}`;
+    return reply.status(201).send({ url, slug, expiresAt: new Date(expiresAt).toISOString(), tier: 'free' });
   });
 
   // POST /api/burn/:slug

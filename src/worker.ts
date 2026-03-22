@@ -14,6 +14,7 @@ import { InMemoryApiKeyStore, MockStripeService } from './stripe.js';
 import type { StripeService } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
+import { DEMO_MARKDOWN } from './demo.js';
 
 const MAX_MARKDOWN_BYTES = 512_000;
 const SLUG_LENGTH = 8;
@@ -257,6 +258,17 @@ export default {
 
     if (url.pathname === '/api/create' && request.method === 'POST') {
       return handleCreate(request, store, baseUrl, stripe, x402Config);
+    }
+
+    if (url.pathname === '/api/demo' && request.method === 'POST') {
+      const slug = nanoid(SLUG_LENGTH);
+      const now = Date.now();
+      const ttlSec = TIER_CONFIGS.free.maxTtlSec;
+      const expiresAt = now + ttlSec * 1000;
+      const renderedHtml = renderMarkdown(DEMO_MARKDOWN, sanitize);
+      await store.set({ slug, html: renderedHtml, markdown: DEMO_MARKDOWN, createdAt: now, expiresAt, tier: 'free' });
+      const pageUrl = `${baseUrl}/${slug}`;
+      return json({ url: pageUrl, slug, expiresAt: new Date(expiresAt).toISOString(), tier: 'free' }, 201);
     }
 
     // Stripe Checkout flow
