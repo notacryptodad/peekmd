@@ -157,6 +157,21 @@ async function handleCreate(
     if (!apiKey) return json({ error: 'Missing API key' }, 401);
     const keyRecord = await stripe.validateApiKey(apiKey);
     if (!keyRecord) return json({ error: 'Invalid API key' }, 401);
+    const quota = await stripe.checkQuota(keyRecord.stripeCustomerId);
+    if (!quota.allowed) {
+      return json({
+        error: 'quota_exceeded',
+        message: `Monthly quota exceeded. Used ${quota.pagesUsed}/${quota.quotaLimit} pages this billing period.`,
+        pagesUsed: quota.pagesUsed,
+        quotaLimit: quota.quotaLimit,
+        remaining: 0,
+        upgrade: {
+          description: 'Upgrade your plan for a higher page quota.',
+          checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+          portalUrl: `${baseUrl}/api/stripe/portal`,
+        },
+      }, 402);
+    }
     stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
   }
 

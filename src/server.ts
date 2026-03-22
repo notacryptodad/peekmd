@@ -135,7 +135,7 @@ export function buildApp(opts?: AppOptions) {
     }
     const ttlSec = ttlResult.ttlSec;
 
-    // Stripe tier: validate API key and record usage
+    // Stripe tier: validate API key, check quota, and record usage
     if (tier === 'stripe') {
       if (!apiKey) {
         return reply.status(401).send({ error: 'Missing API key' });
@@ -143,6 +143,21 @@ export function buildApp(opts?: AppOptions) {
       const keyRecord = await stripe.validateApiKey(apiKey);
       if (!keyRecord) {
         return reply.status(401).send({ error: 'Invalid API key' });
+      }
+      const quota = await stripe.checkQuota(keyRecord.stripeCustomerId);
+      if (!quota.allowed) {
+        return reply.status(402).send({
+          error: 'quota_exceeded',
+          message: `Monthly quota exceeded. Used ${quota.pagesUsed}/${quota.quotaLimit} pages this billing period.`,
+          pagesUsed: quota.pagesUsed,
+          quotaLimit: quota.quotaLimit,
+          remaining: 0,
+          upgrade: {
+            description: 'Upgrade your plan for a higher page quota.',
+            checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+            portalUrl: `${baseUrl}/api/stripe/portal`,
+          },
+        });
       }
       stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
     }

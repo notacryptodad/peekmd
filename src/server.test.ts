@@ -305,7 +305,7 @@ describe('peekmd API', () => {
   // ─── Billing endpoints ──────────────────────────────────────
 
   describe('GET /api/billing/status', () => {
-    it('returns billing status for valid API key', async () => {
+    it('returns billing status with plan, quota, and period fields', async () => {
       const { server, stripe } = stripeApp();
       // Create some usage first
       await server.inject({
@@ -325,6 +325,12 @@ describe('peekmd API', () => {
       const body = JSON.parse(res.body);
       expect(body.customerId).toBe('cus_test123');
       expect(body.currentPeriodUsage).toBe(1);
+      expect(body.plan).toBeDefined();
+      expect(body.pagesUsed).toBe(1);
+      expect(body.quotaLimit).toBeGreaterThan(0);
+      expect(body.remaining).toBe(body.quotaLimit - 1);
+      expect(body.periodStart).toBeDefined();
+      expect(body.periodEnd).toBeDefined();
     });
 
     it('rejects missing API key', async () => {
@@ -344,6 +350,122 @@ describe('peekmd API', () => {
         headers: { authorization: 'Bearer sk_test_bad' },
       });
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // ─── Quota Enforcement ──────────────────────────────────────
+
+  describe('Quota enforcement', () => {
+    function quotaApp(plan: 'basic' | 'pro' = 'basic') {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_quota', 'cus_quota', plan);
+      const stripe = new MockStripeService(keyStore);
+      return { server: app({ stripe }), stripe };
+    }
+
+    it('allows pages within quota', async () => {
+      const { server } = quotaApp('basic');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_quota' },
+        payload: { markdown: '# Within quota' },
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('returns 402 when quota exceeded', async () => {
+      const { server, stripe } = quotaApp('basic');
+      // Exhaust the quota (basic = 100 pages)
+      for (let i = 0; i < 100; i++) {
+        await stripe.recordUsage('cus_quota');
+      }
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_quota' },
+        payload: { markdown: '# Over quota' },
+      });
+      expect(res.statusCode).toBe(402);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('quota_exceeded');
+      expect(body.pagesUsed).toBe(100);
+      expect(body.quotaLimit).toBe(100);
+      expect(body.remaining).toBe(0);
+      expect(body.upgrade).toBeDefined();
+      expect(body.upgrade.checkoutUrl).toContain('/api/stripe/checkout');
+    });
+
+    it('pro plan has higher quota than basic', async () => {
+      const { server, stripe } = quotaApp('pro');
+      // Use 100 pages (basic limit)
+      for (let i = 0; i < 100; i++) {
+        await stripe.recordUsage('cus_quota');
+      }
+      // Pro plan (1000 pages) should still allow
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_quota' },
+        payload: { markdown: '# Still within pro quota' },
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('billing status reflects usage and quota', async () => {
+      const { server, stripe } = quotaApp('basic');
+      // Create 3 pages
+      for (let i = 0; i < 3; i++) {
+        await server.inject({
+          method: 'POST',
+          url: '/api/create',
+          headers: { authorization: 'Bearer sk_test_quota' },
+          payload: { markdown: `# Page ${i}` },
+        });
+      }
+      await new Promise((r) => setTimeout(r, 50));
+
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/billing/status',
+        headers: { authorization: 'Bearer sk_test_quota' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.plan).toBe('basic');
+      expect(body.pagesUsed).toBe(3);
+      expect(body.quotaLimit).toBe(100);
+      expect(body.remaining).toBe(97);
+    });
+
+    it('checkout with plan stores plan for quota tracking', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+
+      // Create checkout with pro plan
+      const checkoutRes = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+        payload: { plan: 'pro' },
+      });
+      const { sessionId } = JSON.parse(checkoutRes.body);
+
+      // Complete checkout
+      const callbackRes = await server.inject({
+        method: 'GET',
+        url: `/api/stripe/callback?session_id=${sessionId}`,
+      });
+      const { apiKey } = JSON.parse(callbackRes.body);
+
+      // Check billing status shows pro plan
+      const statusRes = await server.inject({
+        method: 'GET',
+        url: '/api/billing/status',
+        headers: { authorization: `Bearer ${apiKey}` },
+      });
+      const status = JSON.parse(statusRes.body);
+      expect(status.plan).toBe('pro');
+      expect(status.quotaLimit).toBe(1000);
     });
   });
 

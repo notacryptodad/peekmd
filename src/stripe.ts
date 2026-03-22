@@ -15,7 +15,21 @@ export interface ApiKeyRecord {
 
 export interface BillingStatus {
   customerId: string;
+  plan: string | null;
+  pagesUsed: number;
+  quotaLimit: number;
+  remaining: number;
+  periodStart: string;
+  periodEnd: string;
+  /** @deprecated Use pagesUsed instead */
   currentPeriodUsage: number;
+}
+
+export interface QuotaCheck {
+  allowed: boolean;
+  pagesUsed: number;
+  quotaLimit: number;
+  remaining: number;
 }
 
 export interface CheckoutResult {
@@ -35,6 +49,7 @@ export interface PortalSessionResult {
 export interface StripeService {
   validateApiKey(key: string): Promise<ApiKeyRecord | undefined>;
   recordUsage(customerId: string, pages?: number): Promise<void>;
+  checkQuota(customerId: string): Promise<QuotaCheck>;
   getBillingStatus(customerId: string): Promise<BillingStatus>;
   createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult>;
   handleCheckoutCallback(sessionId: string): Promise<CheckoutCallbackResult>;
@@ -47,12 +62,23 @@ export function generateApiKey(): string {
   return `sk_${nanoid(32)}`;
 }
 
+/** Get the current billing period key (YYYY-MM) and start/end dates. */
+export function getBillingPeriod(now = new Date()): { key: string; start: Date; end: Date } {
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const key = `${y}-${String(m + 1).padStart(2, '0')}`;
+  const start = new Date(Date.UTC(y, m, 1));
+  const end = new Date(Date.UTC(y, m + 1, 1));
+  return { key, start, end };
+}
+
 /**
  * In-memory API key store. Seeded from a config string.
  * Format: "sk_test_abc:cus_xxx,sk_test_def:cus_yyy"
  */
 export class InMemoryApiKeyStore {
   private keys = new Map<string, ApiKeyRecord>();
+  private customerPlans = new Map<string, SubscriptionPlan>();
 
   constructor(keysConfig?: string) {
     if (keysConfig) {
@@ -73,8 +99,19 @@ export class InMemoryApiKeyStore {
     return this.keys.get(key);
   }
 
-  add(key: string, stripeCustomerId: string): void {
+  add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan): void {
     this.keys.set(key, { key, stripeCustomerId });
+    if (plan) {
+      this.customerPlans.set(stripeCustomerId, plan);
+    }
+  }
+
+  getPlan(customerId: string): SubscriptionPlan | undefined {
+    return this.customerPlans.get(customerId);
+  }
+
+  setPlan(customerId: string, plan: SubscriptionPlan): void {
+    this.customerPlans.set(customerId, plan);
   }
 
   size(): number {
@@ -125,9 +162,26 @@ export class StripeClient implements StripeService {
     });
   }
 
+  async checkQuota(customerId: string): Promise<QuotaCheck> {
+    const plan = this.keyStore.getPlan(customerId) ?? 'basic';
+    const quotaLimit = SUBSCRIPTION_PLANS[plan].pagesPerMonth;
+    // In live Stripe, we'd query meter usage. For now, return allowed.
+    return { allowed: true, pagesUsed: 0, quotaLimit, remaining: quotaLimit };
+  }
+
   async getBillingStatus(customerId: string): Promise<BillingStatus> {
+    const plan = this.keyStore.getPlan(customerId) ?? 'basic';
+    const quotaLimit = SUBSCRIPTION_PLANS[plan].pagesPerMonth;
+    const { start, end } = getBillingPeriod();
+    // In live Stripe, we'd query meter usage for the current period.
     return {
       customerId,
+      plan,
+      pagesUsed: 0,
+      quotaLimit,
+      remaining: quotaLimit,
+      periodStart: start.toISOString(),
+      periodEnd: end.toISOString(),
       currentPeriodUsage: 0,
     };
   }
@@ -173,9 +227,12 @@ export class StripeClient implements StripeService {
 
 /**
  * Mock Stripe service for testing and when STRIPE_SECRET_KEY is not set.
+ * Tracks per-customer, per-period usage for quota enforcement.
  */
 export class MockStripeService implements StripeService {
   public usageRecords: Array<{ customerId: string; pages: number }> = [];
+  /** Per-customer per-period usage: Map<`${customerId}:${periodKey}`, count> */
+  private periodUsage = new Map<string, number>();
   public checkoutSessions = new Map<string, { customerId: string; plan?: SubscriptionPlan }>();
   private keyStore: InMemoryApiKeyStore;
 
@@ -195,15 +252,45 @@ export class MockStripeService implements StripeService {
     return this.keyStore.validate(key);
   }
 
+  private periodKey(customerId: string): string {
+    const { key } = getBillingPeriod();
+    return `${customerId}:${key}`;
+  }
+
   async recordUsage(customerId: string, pages = 1): Promise<void> {
     this.usageRecords.push({ customerId, pages });
+    const pk = this.periodKey(customerId);
+    this.periodUsage.set(pk, (this.periodUsage.get(pk) ?? 0) + pages);
+  }
+
+  private getUsage(customerId: string): number {
+    return this.periodUsage.get(this.periodKey(customerId)) ?? 0;
+  }
+
+  async checkQuota(customerId: string): Promise<QuotaCheck> {
+    const plan = this.keyStore.getPlan(customerId) ?? 'basic';
+    const quotaLimit = SUBSCRIPTION_PLANS[plan].pagesPerMonth;
+    const pagesUsed = this.getUsage(customerId);
+    const remaining = Math.max(0, quotaLimit - pagesUsed);
+    return { allowed: remaining > 0, pagesUsed, quotaLimit, remaining };
   }
 
   async getBillingStatus(customerId: string): Promise<BillingStatus> {
-    const usage = this.usageRecords
-      .filter((r) => r.customerId === customerId)
-      .reduce((sum, r) => sum + r.pages, 0);
-    return { customerId, currentPeriodUsage: usage };
+    const plan = this.keyStore.getPlan(customerId) ?? 'basic';
+    const quotaLimit = SUBSCRIPTION_PLANS[plan].pagesPerMonth;
+    const pagesUsed = this.getUsage(customerId);
+    const remaining = Math.max(0, quotaLimit - pagesUsed);
+    const { start, end } = getBillingPeriod();
+    return {
+      customerId,
+      plan,
+      pagesUsed,
+      quotaLimit,
+      remaining,
+      periodStart: start.toISOString(),
+      periodEnd: end.toISOString(),
+      currentPeriodUsage: pagesUsed,
+    };
   }
 
   async createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult> {
@@ -222,7 +309,7 @@ export class MockStripeService implements StripeService {
       throw new Error('Invalid or expired checkout session');
     }
     const apiKey = generateApiKey();
-    this.keyStore.add(apiKey, session.customerId);
+    this.keyStore.add(apiKey, session.customerId, session.plan);
     this.checkoutSessions.delete(sessionId);
     return { apiKey, customerId: session.customerId };
   }
