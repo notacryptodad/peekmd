@@ -468,6 +468,34 @@ pre {
 .use-cases li { padding: 8px 0; color: #94a3b8; font-size: 0.95em; border-bottom: 1px solid #2d2d44; }
 .use-cases li:last-child { border-bottom: none; }
 .use-cases li strong { color: #e2e8f0; }
+
+/* Pricing section */
+.pricing { margin-top: 3em; width: 100%; }
+.pricing h2 { text-align: center; }
+.pricing-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  margin-top: 1.5em;
+}
+@media (max-width: 640px) { .pricing-grid { grid-template-columns: 1fr; } }
+.plan-card {
+  background: #11111b; border: 1px solid #334155; border-radius: 12px;
+  padding: 24px 20px; text-align: center; display: flex; flex-direction: column;
+}
+.plan-card.featured { border-color: #60a5fa; }
+.plan-name { font-weight: 700; font-size: 1.1em; color: #e2e8f0; margin-bottom: 4px; }
+.plan-price { font-size: 1.8em; font-weight: 700; color: #60a5fa; margin: 8px 0 4px; }
+.plan-price .period { font-size: 0.4em; color: #94a3b8; font-weight: 400; }
+.plan-details { list-style: none; padding: 0; margin: 12px 0 20px; text-align: left; }
+.plan-details li { padding: 4px 0; color: #94a3b8; font-size: 0.9em; }
+.plan-details li::before { content: "\\2713 "; color: #60a5fa; font-weight: 700; }
+.plan-cta {
+  display: inline-block; margin-top: auto; padding: 10px 20px;
+  border-radius: 8px; font-weight: 600; font-size: 0.95em;
+  text-decoration: none; transition: background 0.15s;
+}
+.plan-cta-free { background: #334155; color: #e2e8f0; cursor: default; }
+.plan-cta-paid { background: #60a5fa; color: #1a1a2e; }
+.plan-cta-paid:hover { background: #93c5fd; }
 </style>
 </head>
 <body>
@@ -496,7 +524,7 @@ curl -X POST ${baseUrl}/api/create \\
     <p class="demo-hint">Opens in a new tab</p>
   </div>
 
-  <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
+  <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="#pricing">Subscribe</a> for permanent pages &amp; no ads.</p>
   <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
 
   <dl class="features">
@@ -505,6 +533,45 @@ curl -X POST ${baseUrl}/api/create \\
     <div class="feature"><dt>Auto-expiring</dt><dd>5m to permanent</dd></div>
     <div class="feature"><dt>Burn after reading</dt><dd>One-click delete</dd></div>
   </dl>
+
+  <div class="pricing" id="pricing">
+    <h2>Plans</h2>
+    <div class="pricing-grid">
+      <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0<span class="period"></span></div>
+        <ul class="plan-details">
+          <li>5-minute page TTL</li>
+          <li>Unlimited pages</li>
+          <li>Syntax highlighting</li>
+          <li>Ad banner on pages</li>
+        </ul>
+        <span class="plan-cta plan-cta-free">Current default</span>
+      </div>
+      <div class="plan-card featured">
+        <div class="plan-name">Basic</div>
+        <div class="plan-price">$5<span class="period"> /mo</span></div>
+        <ul class="plan-details">
+          <li>100 pages / month</li>
+          <li>Permanent page TTL</li>
+          <li>No ads</li>
+          <li>API key access</li>
+        </ul>
+        <a class="plan-cta plan-cta-paid" href="${baseUrl}/api/stripe/checkout?plan=basic">Get started</a>
+      </div>
+      <div class="plan-card">
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">$20<span class="period"> /mo</span></div>
+        <ul class="plan-details">
+          <li>1,000 pages / month</li>
+          <li>Permanent page TTL</li>
+          <li>No ads</li>
+          <li>API key access</li>
+        </ul>
+        <a class="plan-cta plan-cta-paid" href="${baseUrl}/api/stripe/checkout?plan=pro">Get started</a>
+      </div>
+    </div>
+  </div>
 
   <div class="use-cases">
     <h2>Built for</h2>
