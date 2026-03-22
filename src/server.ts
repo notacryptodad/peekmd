@@ -218,6 +218,30 @@ export function buildApp(opts?: AppOptions) {
     return reply.status(200).send({ ok: true });
   });
 
+  // ─── Stripe Webhooks ─────────────────────────────────────────
+
+  // POST /api/stripe/webhooks — handle Stripe webhook events
+  // Registered in a plugin so the raw-body content parser is scoped to this route only.
+  app.register(async function webhookPlugin(instance) {
+    instance.removeAllContentTypeParsers();
+    instance.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+      done(null, body);
+    });
+
+    instance.post('/api/stripe/webhooks', async (request, reply) => {
+      const signature = request.headers['stripe-signature'] as string;
+      if (!signature) {
+        return reply.status(400).send({ error: 'Missing stripe-signature header' });
+      }
+      const rawBody = request.body as string;
+      const result = await stripe.handleWebhook(rawBody, signature);
+      if (!result.received) {
+        return reply.status(400).send({ error: result.error ?? 'Webhook processing failed' });
+      }
+      return reply.send({ received: true, eventType: result.eventType });
+    });
+  });
+
   // ─── Stripe Checkout Flow ────────────────────────────────────
 
   // POST /api/stripe/checkout — create a Stripe Checkout session
@@ -398,6 +422,7 @@ if (isMain) {
           basic: process.env.STRIPE_BASIC_PRICE_ID,
           pro: process.env.STRIPE_PRO_PRICE_ID,
         },
+        webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
       })
     : new MockStripeService(apiKeyStore);
 

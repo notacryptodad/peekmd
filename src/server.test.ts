@@ -770,6 +770,180 @@ describe('peekmd API', () => {
     });
   });
 
+  // ─── Stripe Webhooks ────────────────────────────────────────
+
+  describe('POST /api/stripe/webhooks', () => {
+    function webhookPayload(type: string, object: Record<string, unknown>) {
+      return JSON.stringify({ type, data: { object } });
+    }
+
+    it('returns 400 when stripe-signature header is missing', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json' },
+        body: webhookPayload('customer.subscription.updated', { customer: 'cus_test' }),
+      });
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body).error).toContain('stripe-signature');
+    });
+
+    it('handles customer.subscription.updated event', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_wh', 'cus_wh_test', 'basic');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      const payload = webhookPayload('customer.subscription.updated', {
+        customer: 'cus_wh_test',
+        plan: 'pro',
+      });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: payload,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.received).toBe(true);
+      expect(body.eventType).toBe('customer.subscription.updated');
+
+      // Plan should be updated to pro
+      expect(keyStore.getPlan('cus_wh_test')).toBe('pro');
+    });
+
+    it('handles customer.subscription.deleted event (downgrades to basic)', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_wh2', 'cus_wh_del', 'pro');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      expect(keyStore.getPlan('cus_wh_del')).toBe('pro');
+
+      const payload = webhookPayload('customer.subscription.deleted', {
+        customer: 'cus_wh_del',
+      });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: payload,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).eventType).toBe('customer.subscription.deleted');
+
+      // Plan should be downgraded to basic
+      expect(keyStore.getPlan('cus_wh_del')).toBe('basic');
+    });
+
+    it('handles invoice.payment_failed event', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+
+      const payload = webhookPayload('invoice.payment_failed', {
+        customer: 'cus_fail',
+      });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: payload,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).eventType).toBe('invoice.payment_failed');
+    });
+
+    it('handles unknown event types gracefully', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+
+      const payload = webhookPayload('charge.succeeded', { customer: 'cus_ok' });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: payload,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).received).toBe(true);
+    });
+
+    it('returns 400 for invalid JSON body', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: 'not json',
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('records webhook events in mock service', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+
+      const payload = webhookPayload('customer.subscription.updated', {
+        customer: 'cus_track',
+        plan: 'basic',
+      });
+      await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: payload,
+      });
+
+      expect(stripe.webhookEvents).toHaveLength(1);
+      expect(stripe.webhookEvents[0].eventType).toBe('customer.subscription.updated');
+      expect(stripe.webhookEvents[0].customerId).toBe('cus_track');
+    });
+
+    it('subscription update changes quota behavior', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_upgrade', 'cus_upgrade', 'basic');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      // Exhaust basic quota (100 pages)
+      for (let i = 0; i < 100; i++) {
+        await stripe.recordUsage('cus_upgrade');
+      }
+
+      // Should be blocked on basic
+      const blockedRes = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_upgrade' },
+        payload: { markdown: '# Over basic quota' },
+      });
+      expect(blockedRes.statusCode).toBe(402);
+
+      // Simulate subscription upgrade webhook
+      const payload = webhookPayload('customer.subscription.updated', {
+        customer: 'cus_upgrade',
+        plan: 'pro',
+      });
+      await server.inject({
+        method: 'POST',
+        url: '/api/stripe/webhooks',
+        headers: { 'content-type': 'application/json', 'stripe-signature': 'test_sig' },
+        body: payload,
+      });
+
+      // Should now be allowed on pro (1000 page quota)
+      const allowedRes = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_upgrade' },
+        payload: { markdown: '# Now on pro plan' },
+      });
+      expect(allowedRes.statusCode).toBe(201);
+    });
+  });
+
   // ─── Health ────────────────────────────────────────────────
 
   describe('Health', () => {

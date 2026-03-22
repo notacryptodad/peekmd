@@ -6,7 +6,7 @@
 import Stripe from 'stripe';
 import { nanoid } from 'nanoid';
 import type { SubscriptionPlan } from './tiers.js';
-import { SUBSCRIPTION_PLANS } from './tiers.js';
+import { SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 
 export interface ApiKeyRecord {
   key: string;
@@ -46,6 +46,13 @@ export interface PortalSessionResult {
   url: string;
 }
 
+export interface WebhookResult {
+  received: boolean;
+  eventType?: string;
+  customerId?: string;
+  error?: string;
+}
+
 export interface StripeService {
   validateApiKey(key: string): Promise<ApiKeyRecord | undefined>;
   recordUsage(customerId: string, pages?: number): Promise<void>;
@@ -54,6 +61,7 @@ export interface StripeService {
   createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult>;
   handleCheckoutCallback(sessionId: string): Promise<CheckoutCallbackResult>;
   createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult>;
+  handleWebhook(rawBody: string, signature: string): Promise<WebhookResult>;
   isConfigured(): boolean;
 }
 
@@ -129,6 +137,7 @@ export class StripeClient implements StripeService {
   private meterEventName: string;
   private priceId: string | undefined;
   private planPriceIds: Partial<Record<SubscriptionPlan, string>>;
+  private webhookSecret: string | undefined;
 
   constructor(opts: {
     secretKey: string;
@@ -136,12 +145,14 @@ export class StripeClient implements StripeService {
     meterEventName?: string;
     priceId?: string;
     planPriceIds?: Partial<Record<SubscriptionPlan, string>>;
+    webhookSecret?: string;
   }) {
     this.stripe = new Stripe(opts.secretKey);
     this.keyStore = opts.keyStore;
     this.meterEventName = opts.meterEventName ?? 'peekmd_page_created';
     this.priceId = opts.priceId;
     this.planPriceIds = opts.planPriceIds ?? {};
+    this.webhookSecret = opts.webhookSecret;
   }
 
   isConfigured(): boolean {
@@ -223,6 +234,59 @@ export class StripeClient implements StripeService {
     });
     return { url: session.url };
   }
+
+  async handleWebhook(rawBody: string, signature: string): Promise<WebhookResult> {
+    if (!this.webhookSecret) {
+      return { received: false, error: 'STRIPE_WEBHOOK_SECRET not configured' };
+    }
+    let event: Stripe.Event;
+    try {
+      event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
+    } catch (err) {
+      return { received: false, error: `Signature verification failed: ${(err as Error).message}` };
+    }
+    return this.processWebhookEvent(event);
+  }
+
+  private processWebhookEvent(event: Stripe.Event): WebhookResult {
+    const customerId = (event.data.object as { customer?: string }).customer ?? undefined;
+
+    switch (event.type) {
+      case 'customer.subscription.updated': {
+        const sub = event.data.object as Stripe.Subscription;
+        const cid = typeof sub.customer === 'string' ? sub.customer : sub.customer.toString();
+        // Resolve plan from price ID
+        const priceId = sub.items?.data?.[0]?.price?.id;
+        if (priceId) {
+          const plan = this.resolvePlanFromPriceId(priceId);
+          if (plan) {
+            this.keyStore.setPlan(cid, plan);
+          }
+        }
+        return { received: true, eventType: event.type, customerId: cid };
+      }
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object as Stripe.Subscription;
+        const cid = typeof sub.customer === 'string' ? sub.customer : sub.customer.toString();
+        // Downgrade to basic on cancellation
+        this.keyStore.setPlan(cid, 'basic');
+        return { received: true, eventType: event.type, customerId: cid };
+      }
+      case 'invoice.payment_failed': {
+        // Log for now — could flag customer in the future
+        return { received: true, eventType: event.type, customerId };
+      }
+      default:
+        return { received: true, eventType: event.type, customerId };
+    }
+  }
+
+  private resolvePlanFromPriceId(priceId: string): SubscriptionPlan | undefined {
+    for (const [plan, id] of Object.entries(this.planPriceIds)) {
+      if (id === priceId) return plan as SubscriptionPlan;
+    }
+    return undefined;
+  }
 }
 
 /**
@@ -234,6 +298,7 @@ export class MockStripeService implements StripeService {
   /** Per-customer per-period usage: Map<`${customerId}:${periodKey}`, count> */
   private periodUsage = new Map<string, number>();
   public checkoutSessions = new Map<string, { customerId: string; plan?: SubscriptionPlan }>();
+  public webhookEvents: Array<{ eventType: string; customerId?: string }> = [];
   private keyStore: InMemoryApiKeyStore;
 
   constructor(keyStore?: InMemoryApiKeyStore) {
@@ -316,5 +381,37 @@ export class MockStripeService implements StripeService {
 
   async createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult> {
     return { url: `${returnUrl}?portal=mock&customer=${customerId}` };
+  }
+
+  async handleWebhook(rawBody: string, _signature: string): Promise<WebhookResult> {
+    let event: { type: string; data: { object: { customer?: string; items?: { data: Array<{ price?: { id: string } }> } } } };
+    try {
+      event = JSON.parse(rawBody);
+    } catch {
+      return { received: false, error: 'Invalid JSON' };
+    }
+    const customerId = event.data?.object?.customer;
+    this.webhookEvents.push({ eventType: event.type, customerId });
+
+    switch (event.type) {
+      case 'customer.subscription.updated': {
+        // In mock mode, accept a plan field on the object for testing
+        const obj = event.data.object as { customer?: string; plan?: SubscriptionPlan };
+        if (customerId && obj.plan && isValidPlan(obj.plan)) {
+          this.keyStore.setPlan(customerId, obj.plan);
+        }
+        return { received: true, eventType: event.type, customerId };
+      }
+      case 'customer.subscription.deleted': {
+        if (customerId) {
+          this.keyStore.setPlan(customerId, 'basic');
+        }
+        return { received: true, eventType: event.type, customerId };
+      }
+      case 'invoice.payment_failed':
+        return { received: true, eventType: event.type, customerId };
+      default:
+        return { received: true, eventType: event.type, customerId };
+    }
   }
 }

@@ -28,6 +28,7 @@ interface Env {
   STRIPE_PRICE_ID?: string;
   STRIPE_BASIC_PRICE_ID?: string;
   STRIPE_PRO_PRICE_ID?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
   X402_WALLET_ADDRESS?: string;
   X402_NETWORK?: string;
   X402_FACILITATOR_URL?: string;
@@ -326,6 +327,18 @@ export default {
       } catch (err) {
         return json({ error: 'checkout_failed', message: (err as Error).message }, 500);
       }
+    }
+
+    // Stripe Webhooks
+    if (url.pathname === '/api/stripe/webhooks' && request.method === 'POST') {
+      const signature = request.headers.get('stripe-signature');
+      if (!signature) return json({ error: 'Missing stripe-signature header' }, 400);
+      const rawBody = await request.text();
+      const result = await stripe.handleWebhook(rawBody, signature);
+      if (!result.received) {
+        return json({ error: result.error ?? 'Webhook processing failed' }, 400);
+      }
+      return json({ received: true, eventType: result.eventType });
     }
 
     if (url.pathname === '/api/stripe/callback' && request.method === 'GET') {
