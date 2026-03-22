@@ -236,18 +236,30 @@ body {
   font-size: 1.1em;
 }
 
-/* Ad banner (free tier) */
+/* Ad banner placeholder (free tier) */
 .ad-banner {
-  border-top: 1px solid var(--border);
-  padding: 16px 24px;
+  margin-top: 3em;
+  padding: 24px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
   text-align: center;
-  font-size: 12px;
-  color: var(--fg-muted);
   background: var(--table-stripe);
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ad-banner .ad-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  opacity: 0.6;
 }
 .ad-banner a {
   color: var(--link);
   text-decoration: none;
+  font-weight: 600;
 }
 .ad-banner a:hover { text-decoration: underline; }
 
@@ -287,13 +299,14 @@ body {
 
 <div class="content" id="content">
 ${html}
-</div>
 ${showAdBanner ? `
 <div class="ad-banner">
+  <span class="ad-label">Advertisement</span>
   Shared with <a href="https://peekmd.com">peekmd</a> &mdash; beautiful markdown, one link away.
-  Upgrade for longer TTLs and no banner.
+  <a href="${baseUrl}/api/pricing">Upgrade to remove ads</a>
 </div>
 ` : ''}
+</div>
 
 <script>
 (function() {
