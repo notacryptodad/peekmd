@@ -439,6 +439,17 @@ pre {
 }
 .demo-btn:hover { background: #93c5fd; }
 .demo-btn:disabled { opacity: 0.6; cursor: wait; }
+.demo-result {
+  margin-top: 1em; padding: 16px 20px; background: #11111b; border-radius: 8px;
+  border: 1px solid #334155; display: none; text-align: center;
+}
+.demo-result p { color: #94a3b8; font-size: 0.9em; margin-bottom: 8px; }
+.demo-result a {
+  color: #60a5fa; font-weight: 600; font-size: 1em; text-decoration: none;
+  word-break: break-all;
+}
+.demo-result a:hover { text-decoration: underline; }
+.demo-result .demo-hint { font-size: 0.8em; color: #6c7086; margin-top: 8px; }
 .use-cases { margin-top: 2.5em; text-align: left; width: 100%; }
 .use-cases ul { list-style: none; padding: 0; }
 .use-cases li { padding: 8px 0; color: #94a3b8; font-size: 0.95em; border-bottom: 1px solid #2d2d44; }
@@ -466,6 +477,11 @@ curl -X POST ${baseUrl}/api/create \\
 { <span class="key">"url"</span>: <span class="string">"${baseUrl}/abc123"</span>, <span class="key">"slug"</span>: <span class="string">"abc123"</span> }</pre>
 
   <button class="demo-btn" id="demo-btn">View Demo</button>
+  <div class="demo-result" id="demo-result">
+    <p>Your demo page (expires in 5 minutes):</p>
+    <a id="demo-link" href="#" target="_blank" rel="noopener"></a>
+    <p class="demo-hint">Opens in a new tab</p>
+  </div>
 
   <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
 
@@ -490,10 +506,19 @@ curl -X POST ${baseUrl}/api/create \\
 document.getElementById('demo-btn').addEventListener('click', function() {
   var btn = this;
   btn.disabled = true;
-  btn.textContent = 'Creating demo...';
+  btn.textContent = 'Generating demo page...';
   fetch('${baseUrl}/api/demo', { method: 'POST' })
     .then(function(r) { return r.json(); })
-    .then(function(d) { if (d.url) window.location.href = d.url; else throw new Error(d.error); })
+    .then(function(d) {
+      if (!d.url) throw new Error(d.error);
+      var result = document.getElementById('demo-result');
+      var link = document.getElementById('demo-link');
+      link.href = d.url;
+      link.textContent = d.url;
+      result.style.display = 'block';
+      btn.textContent = 'Generate Another Demo';
+      btn.disabled = false;
+    })
     .catch(function() { btn.disabled = false; btn.textContent = 'View Demo'; });
 });
 </script>
