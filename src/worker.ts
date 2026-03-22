@@ -9,7 +9,8 @@ import { sanitize } from './sanitize-worker.js';
 import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
-import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY } from './tiers.js';
+import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
+import type { SubscriptionPlan } from './tiers.js';
 import { InMemoryApiKeyStore, MockStripeService } from './stripe.js';
 import type { StripeService } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
@@ -25,6 +26,8 @@ interface Env {
   STRIPE_API_KEYS?: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_PRICE_ID?: string;
+  STRIPE_BASIC_PRICE_ID?: string;
+  STRIPE_PRO_PRICE_ID?: string;
   X402_WALLET_ADDRESS?: string;
   X402_NETWORK?: string;
   X402_FACILITATOR_URL?: string;
@@ -208,6 +211,12 @@ async function handleGet(slug: string, store: PageStore, baseUrl: string): Promi
 }
 
 function handlePricing(baseUrl: string, x402Config: Partial<X402Config>): Response {
+  const plans = Object.entries(SUBSCRIPTION_PLANS).map(([key, config]) => ({
+    plan: key,
+    name: config.name,
+    pagesPerMonth: config.pagesPerMonth,
+    checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+  }));
   return json({
     free: {
       maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
@@ -217,6 +226,7 @@ function handlePricing(baseUrl: string, x402Config: Partial<X402Config>): Respon
     stripe: {
       maxTtlSeconds: 'unlimited',
       adBanner: false,
+      plans,
       pricePerPage: {
         upTo1Hour: '$0.001',
         upTo24Hours: '$0.005',
@@ -273,11 +283,29 @@ export default {
 
     // Stripe Checkout flow
     if (url.pathname === '/api/stripe/checkout' && request.method === 'POST') {
+      let planParam: string | undefined;
       try {
-        const result = await stripe.createCheckoutSession(baseUrl);
+        const body = await request.json() as { plan?: string };
+        planParam = body.plan;
+      } catch {
+        // empty body is fine — plan is optional
+      }
+      let plan: SubscriptionPlan | undefined;
+      if (planParam !== undefined) {
+        if (!isValidPlan(planParam)) {
+          return json({
+            error: 'invalid_plan',
+            message: `Invalid plan "${planParam}". Valid plans: ${Object.keys(SUBSCRIPTION_PLANS).join(', ')}`,
+          }, 400);
+        }
+        plan = planParam;
+      }
+      try {
+        const result = await stripe.createCheckoutSession(baseUrl, plan);
         return json({
           url: result.url,
           sessionId: result.sessionId,
+          plan: plan ?? null,
           message: 'Redirect the user to the checkout URL. After payment, they will receive an API key.',
         });
       } catch (err) {

@@ -5,6 +5,8 @@
 
 import Stripe from 'stripe';
 import { nanoid } from 'nanoid';
+import type { SubscriptionPlan } from './tiers.js';
+import { SUBSCRIPTION_PLANS } from './tiers.js';
 
 export interface ApiKeyRecord {
   key: string;
@@ -30,7 +32,7 @@ export interface StripeService {
   validateApiKey(key: string): Promise<ApiKeyRecord | undefined>;
   recordUsage(customerId: string, pages?: number): Promise<void>;
   getBillingStatus(customerId: string): Promise<BillingStatus>;
-  createCheckoutSession(baseUrl: string): Promise<CheckoutResult>;
+  createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult>;
   handleCheckoutCallback(sessionId: string): Promise<CheckoutCallbackResult>;
   isConfigured(): boolean;
 }
@@ -84,17 +86,20 @@ export class StripeClient implements StripeService {
   private keyStore: InMemoryApiKeyStore;
   private meterEventName: string;
   private priceId: string | undefined;
+  private planPriceIds: Partial<Record<SubscriptionPlan, string>>;
 
   constructor(opts: {
     secretKey: string;
     keyStore: InMemoryApiKeyStore;
     meterEventName?: string;
     priceId?: string;
+    planPriceIds?: Partial<Record<SubscriptionPlan, string>>;
   }) {
     this.stripe = new Stripe(opts.secretKey);
     this.keyStore = opts.keyStore;
     this.meterEventName = opts.meterEventName ?? 'peekmd_page_created';
     this.priceId = opts.priceId;
+    this.planPriceIds = opts.planPriceIds ?? {};
   }
 
   isConfigured(): boolean {
@@ -122,13 +127,16 @@ export class StripeClient implements StripeService {
     };
   }
 
-  async createCheckoutSession(baseUrl: string): Promise<CheckoutResult> {
-    if (!this.priceId) {
-      throw new Error('STRIPE_PRICE_ID not configured');
+  async createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult> {
+    // Resolve price ID: plan-specific first, then legacy fallback
+    const priceId = plan ? this.planPriceIds[plan] : this.priceId;
+    if (!priceId) {
+      const envVar = plan ? SUBSCRIPTION_PLANS[plan].priceIdEnvVar : 'STRIPE_PRICE_ID';
+      throw new Error(`${envVar} not configured`);
     }
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
-      line_items: [{ price: this.priceId }],
+      line_items: [{ price: priceId }],
       success_url: `${baseUrl}/api/stripe/callback?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/api/pricing`,
     });
@@ -155,7 +163,7 @@ export class StripeClient implements StripeService {
  */
 export class MockStripeService implements StripeService {
   public usageRecords: Array<{ customerId: string; pages: number }> = [];
-  public checkoutSessions = new Map<string, { customerId: string }>();
+  public checkoutSessions = new Map<string, { customerId: string; plan?: SubscriptionPlan }>();
   private keyStore: InMemoryApiKeyStore;
 
   constructor(keyStore?: InMemoryApiKeyStore) {
@@ -185,10 +193,10 @@ export class MockStripeService implements StripeService {
     return { customerId, currentPeriodUsage: usage };
   }
 
-  async createCheckoutSession(baseUrl: string): Promise<CheckoutResult> {
+  async createCheckoutSession(baseUrl: string, plan?: SubscriptionPlan): Promise<CheckoutResult> {
     const sessionId = `cs_test_${nanoid(16)}`;
     const customerId = `cus_${nanoid(14)}`;
-    this.checkoutSessions.set(sessionId, { customerId });
+    this.checkoutSessions.set(sessionId, { customerId, plan });
     return {
       url: `${baseUrl}/api/stripe/callback?session_id=${sessionId}`,
       sessionId,

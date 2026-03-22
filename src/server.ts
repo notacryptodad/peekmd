@@ -5,7 +5,8 @@ import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-node.js';
 import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
-import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY } from './tiers.js';
+import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
+import type { SubscriptionPlan } from './tiers.js';
 import type { StripeService } from './stripe.js';
 import { MockStripeService, InMemoryApiKeyStore, StripeClient } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
@@ -205,12 +206,26 @@ export function buildApp(opts?: AppOptions) {
   // ─── Stripe Checkout Flow ────────────────────────────────────
 
   // POST /api/stripe/checkout — create a Stripe Checkout session
-  app.post('/api/stripe/checkout', async (_request, reply) => {
+  app.post<{
+    Body: { plan?: string };
+  }>('/api/stripe/checkout', async (request, reply) => {
+    const { plan: planParam } = request.body ?? {};
+    let plan: SubscriptionPlan | undefined;
+    if (planParam !== undefined) {
+      if (!isValidPlan(planParam)) {
+        return reply.status(400).send({
+          error: 'invalid_plan',
+          message: `Invalid plan "${planParam}". Valid plans: ${Object.keys(SUBSCRIPTION_PLANS).join(', ')}`,
+        });
+      }
+      plan = planParam;
+    }
     try {
-      const result = await stripe.createCheckoutSession(baseUrl);
+      const result = await stripe.createCheckoutSession(baseUrl, plan);
       return reply.send({
         url: result.url,
         sessionId: result.sessionId,
+        plan: plan ?? null,
         message: 'Redirect the user to the checkout URL. After payment, they will receive an API key.',
       });
     } catch (err) {
@@ -264,6 +279,12 @@ export function buildApp(opts?: AppOptions) {
 
   // GET /api/pricing — show pricing info for all tiers
   app.get('/api/pricing', async (_request, reply) => {
+    const plans = Object.entries(SUBSCRIPTION_PLANS).map(([key, config]) => ({
+      plan: key,
+      name: config.name,
+      pagesPerMonth: config.pagesPerMonth,
+      checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+    }));
     return reply.send({
       free: {
         maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
@@ -273,6 +294,7 @@ export function buildApp(opts?: AppOptions) {
       stripe: {
         maxTtlSeconds: 'unlimited',
         adBanner: false,
+        plans,
         pricePerPage: {
           upTo1Hour: '$0.001',
           upTo24Hours: '$0.005',
@@ -335,6 +357,10 @@ if (isMain) {
         keyStore: apiKeyStore,
         meterEventName: process.env.STRIPE_METER_EVENT_NAME,
         priceId: process.env.STRIPE_PRICE_ID,
+        planPriceIds: {
+          basic: process.env.STRIPE_BASIC_PRICE_ID,
+          pro: process.env.STRIPE_PRO_PRICE_ID,
+        },
       })
     : new MockStripeService(apiKeyStore);
 

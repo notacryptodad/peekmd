@@ -81,6 +81,33 @@ export function validateTierTtl(
   return { ok: true, ttlSec };
 }
 
+// ─── Subscription Plans ──────────────────────────────────────
+
+export type SubscriptionPlan = 'basic' | 'pro';
+
+export interface SubscriptionPlanConfig {
+  name: string;
+  pagesPerMonth: number;
+  priceIdEnvVar: string;
+}
+
+export const SUBSCRIPTION_PLANS: Record<SubscriptionPlan, SubscriptionPlanConfig> = {
+  basic: {
+    name: 'Basic',
+    pagesPerMonth: 100,
+    priceIdEnvVar: 'STRIPE_BASIC_PRICE_ID',
+  },
+  pro: {
+    name: 'Pro',
+    pagesPerMonth: 1000,
+    priceIdEnvVar: 'STRIPE_PRO_PRICE_ID',
+  },
+};
+
+export function isValidPlan(plan: string): plan is SubscriptionPlan {
+  return plan === 'basic' || plan === 'pro';
+}
+
 /** Stripe pricing in cents per page, scaled by TTL. */
 export function stripePriceCents(ttlSec: number): number {
   if (ttlSec === 0) return 1.0; // $0.01 for permanent

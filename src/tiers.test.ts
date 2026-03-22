@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectTier, validateTierTtl, stripePriceCents, TIER_CONFIGS } from './tiers.js';
+import { detectTier, validateTierTtl, stripePriceCents, TIER_CONFIGS, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 
 describe('detectTier', () => {
   it('defaults to free when no headers', () => {
@@ -108,5 +108,32 @@ describe('TIER_CONFIGS', () => {
     expect(TIER_CONFIGS.stripe.showAdBanner).toBe(false);
     expect(TIER_CONFIGS.x402.maxTtlSec).toBe(0);
     expect(TIER_CONFIGS.x402.showAdBanner).toBe(false);
+  });
+});
+
+describe('SUBSCRIPTION_PLANS', () => {
+  it('defines basic plan with 100 pages/mo', () => {
+    expect(SUBSCRIPTION_PLANS.basic.name).toBe('Basic');
+    expect(SUBSCRIPTION_PLANS.basic.pagesPerMonth).toBe(100);
+    expect(SUBSCRIPTION_PLANS.basic.priceIdEnvVar).toBe('STRIPE_BASIC_PRICE_ID');
+  });
+
+  it('defines pro plan with 1000 pages/mo', () => {
+    expect(SUBSCRIPTION_PLANS.pro.name).toBe('Pro');
+    expect(SUBSCRIPTION_PLANS.pro.pagesPerMonth).toBe(1000);
+    expect(SUBSCRIPTION_PLANS.pro.priceIdEnvVar).toBe('STRIPE_PRO_PRICE_ID');
+  });
+});
+
+describe('isValidPlan', () => {
+  it('returns true for valid plans', () => {
+    expect(isValidPlan('basic')).toBe(true);
+    expect(isValidPlan('pro')).toBe(true);
+  });
+
+  it('returns false for invalid plans', () => {
+    expect(isValidPlan('enterprise')).toBe(false);
+    expect(isValidPlan('')).toBe(false);
+    expect(isValidPlan('free')).toBe(false);
   });
 });

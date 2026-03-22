@@ -432,6 +432,73 @@ describe('peekmd API', () => {
       });
       expect(res.statusCode).toBe(400);
     });
+
+    it('POST /api/stripe/checkout accepts plan parameter', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+        payload: { plan: 'basic' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.url).toContain('/api/stripe/callback');
+      expect(body.plan).toBe('basic');
+      expect(body.sessionId).toBeDefined();
+    });
+
+    it('POST /api/stripe/checkout accepts pro plan', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+        payload: { plan: 'pro' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.plan).toBe('pro');
+    });
+
+    it('POST /api/stripe/checkout rejects invalid plan', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+        payload: { plan: 'enterprise' },
+      });
+      expect(res.statusCode).toBe(400);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('invalid_plan');
+      expect(body.message).toContain('enterprise');
+    });
+
+    it('POST /api/stripe/checkout works without plan (legacy)', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.plan).toBeNull();
+    });
+
+    it('MockStripeService stores plan in checkout session', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+        payload: { plan: 'pro' },
+      });
+      const { sessionId } = JSON.parse(res.body);
+      const session = stripe.checkoutSessions.get(sessionId);
+      expect(session?.plan).toBe('pro');
+    });
   });
 
   // ─── Pricing ────────────────────────────────────────────────
@@ -446,6 +513,20 @@ describe('peekmd API', () => {
       expect(body.free.adBanner).toBe(true);
       expect(body.stripe.adBanner).toBe(false);
       expect(body.x402.pricePerPage).toBe('0.01 USDC');
+    });
+
+    it('includes subscription plans in stripe pricing', async () => {
+      const server = app();
+      const res = await server.inject({ method: 'GET', url: '/api/pricing' });
+      const body = JSON.parse(res.body);
+      expect(body.stripe.plans).toBeDefined();
+      expect(body.stripe.plans).toHaveLength(2);
+      expect(body.stripe.plans[0].plan).toBe('basic');
+      expect(body.stripe.plans[0].name).toBe('Basic');
+      expect(body.stripe.plans[0].pagesPerMonth).toBe(100);
+      expect(body.stripe.plans[1].plan).toBe('pro');
+      expect(body.stripe.plans[1].name).toBe('Pro');
+      expect(body.stripe.plans[1].pagesPerMonth).toBe(1000);
     });
   });
 
