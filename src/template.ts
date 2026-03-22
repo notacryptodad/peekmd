@@ -411,9 +411,30 @@ export function landingTemplate(baseUrl: string): string {
 <meta property="og:title" content="peekmd — Share beautifully rendered markdown via API">
 <meta property="og:description" content="${description}">
 <meta property="og:url" content="${baseUrl}/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${baseUrl}/og-image.svg">
+<meta property="og:image:type" content="image/svg+xml">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="peekmd — Share beautifully rendered markdown via API">
 <meta name="twitter:description" content="${description}">
+<meta name="twitter:image" content="${baseUrl}/og-image.svg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "peekmd",
+  "description": "POST markdown to an API, get a shareable link to a beautifully rendered page.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "url": "${baseUrl}"
+}
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {

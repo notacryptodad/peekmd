@@ -16,6 +16,7 @@ import type { StripeService } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
 import { DEMO_MARKDOWN } from './demo.js';
+import { ogImageSvg } from './og-image.js';
 
 const MAX_MARKDOWN_BYTES = 512_000;
 const SLUG_LENGTH = 8;
@@ -272,6 +273,16 @@ export default {
     // Route matching
     if (url.pathname === '/' && request.method === 'GET') {
       return html(landingTemplate(baseUrl));
+    }
+
+    if (url.pathname === '/og-image.svg' && request.method === 'GET') {
+      return new Response(ogImageSvg(), {
+        headers: {
+          'Content-Type': 'image/svg+xml',
+          'Cache-Control': 'public, max-age=86400',
+          ...CSP_HEADERS,
+        },
+      });
     }
 
     if (url.pathname === '/health' && request.method === 'GET') {

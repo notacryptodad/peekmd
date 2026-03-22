@@ -12,6 +12,7 @@ import { MockStripeService, InMemoryApiKeyStore, StripeClient } from './stripe.j
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
 import { DEMO_MARKDOWN } from './demo.js';
+import { ogImageSvg } from './og-image.js';
 
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
@@ -93,6 +94,14 @@ export function buildApp(opts?: AppOptions) {
   // Landing page
   app.get('/', async (_request, reply) => {
     return reply.type('text/html').send(landingTemplate(baseUrl));
+  });
+
+  // OG image for social sharing
+  app.get('/og-image.svg', async (_request, reply) => {
+    return reply
+      .type('image/svg+xml')
+      .header('Cache-Control', 'public, max-age=86400')
+      .send(ogImageSvg());
   });
 
   // Health check
