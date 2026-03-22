@@ -384,12 +384,23 @@ ${showAdBanner ? `
 }
 
 export function landingTemplate(baseUrl: string): string {
+  const description = 'POST markdown to an API, get a shareable link to a beautifully rendered page. Built for AI agents, bots, and developers who need to share rich content instantly.';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>peekmd — beautiful markdown, one link away</title>
+<title>peekmd — Share beautifully rendered markdown via API</title>
+<meta name="description" content="${description}">
+<meta name="keywords" content="markdown, API, share, render, AI agents, developer tools, syntax highlighting, temporary pages">
+<link rel="canonical" href="${baseUrl}/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="peekmd — Share beautifully rendered markdown via API">
+<meta property="og:description" content="${description}">
+<meta property="og:url" content="${baseUrl}/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="peekmd — Share beautifully rendered markdown via API">
+<meta name="twitter:description" content="${description}">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -398,10 +409,13 @@ body {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 40px 24px;
 }
-.hero { text-align: center; max-width: 600px; }
-h1 { font-size: 2.5em; font-weight: 700; margin-bottom: 0.3em; }
+.hero { text-align: center; max-width: 640px; }
+h1 { font-size: 2.5em; font-weight: 700; margin-bottom: 0.2em; }
 h1 span { color: #60a5fa; }
-.tagline { font-size: 1.2em; color: #94a3b8; margin-bottom: 2em; }
+.tagline { font-size: 1.3em; color: #e2e8f0; margin-bottom: 0.5em; font-weight: 500; }
+.problem { font-size: 1em; color: #94a3b8; margin-bottom: 2em; line-height: 1.6; max-width: 520px; margin-left: auto; margin-right: auto; }
+.problem strong { color: #e2e8f0; }
+h2 { font-size: 1.1em; color: #94a3b8; font-weight: 600; margin-bottom: 1em; text-transform: uppercase; letter-spacing: 0.05em; }
 pre {
   background: #11111b; color: #cdd6f4; padding: 20px 24px; border-radius: 10px;
   text-align: left; overflow-x: auto; font-size: 0.85em; line-height: 1.6;
@@ -425,12 +439,24 @@ pre {
 }
 .demo-btn:hover { background: #93c5fd; }
 .demo-btn:disabled { opacity: 0.6; cursor: wait; }
+.use-cases { margin-top: 2.5em; text-align: left; width: 100%; }
+.use-cases ul { list-style: none; padding: 0; }
+.use-cases li { padding: 8px 0; color: #94a3b8; font-size: 0.95em; border-bottom: 1px solid #2d2d44; }
+.use-cases li:last-child { border-bottom: none; }
+.use-cases li strong { color: #e2e8f0; }
 </style>
 </head>
 <body>
 <div class="hero">
   <h1>peek<span>md</span></h1>
-  <p class="tagline">Beautiful markdown, one link away.</p>
+  <p class="tagline">Share beautifully rendered markdown via API.</p>
+  <p class="problem">
+    AI agents, bots, and scripts generate markdown — but <strong>Slack, Discord, and email mangle it</strong>.
+    peekmd gives you a single API call to turn markdown into a <strong>shareable, beautifully rendered web page</strong>
+    with syntax highlighting, dark mode, and auto-expiry.
+  </p>
+
+  <h2>One API call</h2>
   <pre><span class="comment"># Post markdown, get a shareable link</span>
 curl -X POST ${baseUrl}/api/create \\
   -H <span class="string">"Content-Type: application/json"</span> \\
@@ -438,14 +464,27 @@ curl -X POST ${baseUrl}/api/create \\
 
 <span class="comment"># Response:</span>
 { <span class="key">"url"</span>: <span class="string">"${baseUrl}/abc123"</span>, <span class="key">"slug"</span>: <span class="string">"abc123"</span> }</pre>
-  <p class="info">Free tier: 5-min TTL. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
+
+  <button class="demo-btn" id="demo-btn">View Demo</button>
+
+  <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
+
   <dl class="features">
     <div class="feature"><dt>Syntax highlighting</dt><dd>190+ languages</dd></div>
     <div class="feature"><dt>Dark &amp; light mode</dt><dd>Auto-detected</dd></div>
     <div class="feature"><dt>Auto-expiring</dt><dd>5m to permanent</dd></div>
     <div class="feature"><dt>Burn after reading</dt><dd>One-click delete</dd></div>
   </dl>
-  <button class="demo-btn" id="demo-btn">View Demo</button>
+
+  <div class="use-cases">
+    <h2>Built for</h2>
+    <ul>
+      <li><strong>AI agents</strong> — Share reports, code reviews, and analysis with humans via a clean link</li>
+      <li><strong>CI/CD pipelines</strong> — Post build reports, test results, and deploy summaries</li>
+      <li><strong>Bots &amp; automations</strong> — Send rich formatted content to Slack, Discord, or email as a link</li>
+      <li><strong>Developers</strong> — Quick-share code snippets, docs, and notes without creating a repo or gist</li>
+    </ul>
+  </div>
 </div>
 <script>
 document.getElementById('demo-btn').addEventListener('click', function() {
