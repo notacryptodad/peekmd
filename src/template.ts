@@ -517,12 +517,66 @@ pre {
 .plan-cta-free { background: #334155; color: #e2e8f0; cursor: default; }
 .plan-cta-paid { background: #60a5fa; color: #1a1a2e; }
 .plan-cta-paid:hover { background: #93c5fd; }
+
+/* GitHub star badge */
+.gh-badge {
+  display: inline-block; margin-top: 0.5em;
+}
+.gh-badge img { vertical-align: middle; }
+
+/* How it works */
+.how-it-works { margin-top: 2.5em; width: 100%; }
+.how-it-works h2 { text-align: center; }
+.steps {
+  display: flex; gap: 24px; margin-top: 1.5em; justify-content: center; flex-wrap: wrap;
+}
+.step {
+  flex: 1; min-width: 160px; max-width: 200px; text-align: center;
+  background: #11111b; border: 1px solid #334155; border-radius: 12px; padding: 20px 16px;
+}
+.step-num {
+  display: inline-block; width: 32px; height: 32px; line-height: 32px;
+  background: #60a5fa; color: #1a1a2e; border-radius: 50%;
+  font-weight: 700; font-size: 0.9em; margin-bottom: 8px;
+}
+.step-title { font-weight: 600; font-size: 1em; color: #e2e8f0; margin-bottom: 4px; }
+.step-desc { font-size: 0.85em; color: #94a3b8; }
+.step-arrow { display: flex; align-items: center; font-size: 1.5em; color: #475569; }
+@media (max-width: 640px) { .step-arrow { display: none; } }
+
+/* Code tabs */
+.code-tabs { margin-bottom: 1.5em; width: 100%; }
+.tab-bar {
+  display: flex; gap: 0; border-bottom: 1px solid #334155; margin-bottom: 0;
+}
+.tab-btn {
+  background: transparent; border: none; color: #94a3b8; padding: 8px 16px;
+  cursor: pointer; font-size: 0.85em; font-weight: 500;
+  border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.tab-btn:hover { color: #e2e8f0; }
+.tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.tab-panel pre { border-radius: 0 0 10px 10px; margin-top: 0; }
+
+/* Secondary CTA */
+.cta-row { display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 2em; flex-wrap: wrap; }
+.gh-cta {
+  display: inline-block; padding: 12px 28px;
+  background: transparent; color: #e2e8f0; font-weight: 600; font-size: 1em;
+  border: 1px solid #475569; border-radius: 8px; cursor: pointer; transition: all 0.15s;
+  text-decoration: none;
+}
+.gh-cta:hover { border-color: #94a3b8; color: #fff; }
 </style>
 </head>
 <body>
 <div class="hero">
   <h1>peek<span>md</span></h1>
   <p class="tagline">Share beautifully rendered markdown via API.</p>
+  <a class="gh-badge" href="https://github.com/notacryptodad/peekmd" target="_blank" rel="noopener"><img src="https://img.shields.io/github/stars/notacryptodad/peekmd?style=social" alt="GitHub stars"></a>
   <p class="problem">
     AI agents, bots, and scripts generate markdown — but <strong>Slack, Discord, and email mangle it</strong>.
     peekmd gives you a single API call to turn markdown into a <strong>shareable, beautifully rendered web page</strong>
@@ -530,15 +584,48 @@ pre {
   </p>
 
   <h2>One API call</h2>
-  <pre><span class="comment"># Post markdown, get a shareable link</span>
+  <div class="code-tabs">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="bash">Bash</button>
+      <button class="tab-btn" data-tab="python">Python</button>
+      <button class="tab-btn" data-tab="javascript">JavaScript</button>
+    </div>
+    <div class="tab-panel active" data-tab="bash">
+      <pre><span class="comment"># Post markdown, get a shareable link</span>
 curl -X POST ${baseUrl}/api/create \\
   -H <span class="string">"Content-Type: application/json"</span> \\
   -d '{<span class="key">"markdown"</span>: <span class="string">"# Hello\\nYour markdown here."</span>}'
 
 <span class="comment"># Response:</span>
 { <span class="key">"url"</span>: <span class="string">"${baseUrl}/abc123"</span>, <span class="key">"slug"</span>: <span class="string">"abc123"</span> }</pre>
+    </div>
+    <div class="tab-panel" data-tab="python">
+      <pre><span class="comment"># pip install requests</span>
+<span class="key">import</span> requests
 
-  <button class="demo-btn" id="demo-btn">View Demo</button>
+resp = requests.post(
+    <span class="string">"${baseUrl}/api/create"</span>,
+    json={<span class="string">"markdown"</span>: <span class="string">"# Hello\\nYour markdown here."</span>}
+)
+print(resp.json()[<span class="string">"url"</span>])
+<span class="comment"># ${baseUrl}/abc123</span></pre>
+    </div>
+    <div class="tab-panel" data-tab="javascript">
+      <pre><span class="key">const</span> resp = <span class="key">await</span> fetch(<span class="string">"${baseUrl}/api/create"</span>, {
+  method: <span class="string">"POST"</span>,
+  headers: { <span class="string">"Content-Type"</span>: <span class="string">"application/json"</span> },
+  body: JSON.stringify({ markdown: <span class="string">"# Hello\\nYour markdown here."</span> })
+});
+<span class="key">const</span> { url } = <span class="key">await</span> resp.json();
+console.log(url);
+<span class="comment">// ${baseUrl}/abc123</span></pre>
+    </div>
+  </div>
+
+  <div class="cta-row">
+    <button class="demo-btn" id="demo-btn">View Demo</button>
+    <a class="gh-cta" href="https://github.com/notacryptodad/peekmd" target="_blank" rel="noopener">View on GitHub</a>
+  </div>
   <div class="demo-result" id="demo-result">
     <p>Your demo page (expires in 5 minutes):</p>
     <a id="demo-link" href="#" target="_blank" rel="noopener"></a>
@@ -554,6 +641,29 @@ curl -X POST ${baseUrl}/api/create \\
     <div class="feature"><dt>Auto-expiring</dt><dd>5m to permanent</dd></div>
     <div class="feature"><dt>Burn after reading</dt><dd>One-click delete</dd></div>
   </dl>
+
+  <div class="how-it-works">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">POST</div>
+        <div class="step-desc">Send markdown to the API</div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">URL</div>
+        <div class="step-desc">Get a shareable link back</div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">Share</div>
+        <div class="step-desc">Anyone can view the rendered page</div>
+      </div>
+    </div>
+  </div>
 
   <div class="pricing" id="pricing">
     <h2>Plans</h2>
@@ -605,6 +715,17 @@ curl -X POST ${baseUrl}/api/create \\
   </div>
 </div>
 <script>
+// Code tabs
+document.querySelectorAll('.tab-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var tab = this.getAttribute('data-tab');
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    this.classList.add('active');
+    document.querySelector('.tab-panel[data-tab="' + tab + '"]').classList.add('active');
+  });
+});
+
 document.getElementById('demo-btn').addEventListener('click', function() {
   var btn = this;
   btn.disabled = true;
