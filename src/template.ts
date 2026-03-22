@@ -484,6 +484,7 @@ curl -X POST ${baseUrl}/api/create \\
   </div>
 
   <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
+  <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
 
   <dl class="features">
     <div class="feature"><dt>Syntax highlighting</dt><dd>190+ languages</dd></div>
