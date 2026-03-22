@@ -1,12 +1,29 @@
 {
   "name": "peekmd",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Beautiful markdown, one link away",
   "type": "module",
+  "bin": {
+    "peekmd": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    },
+    "./store": {
+      "import": "./dist/memory-store.js",
+      "types": "./dist/memory-store.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "types": "./dist/types.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts",
+    "start": "node dist/cli.js",
+    "dev": "tsx watch src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

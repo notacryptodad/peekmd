@@ -1,16 +1,20 @@
 import Fastify from 'fastify';
 import { nanoid } from 'nanoid';
-import * as store from './store.js';
+import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
 import { pageTemplate, notFoundTemplate } from './template.js';
+import { MemoryStore } from './memory-store.js';
 
 const DEFAULT_TTL_SEC = 5 * 60; // 5 minutes
 const MAX_TTL_SEC = 24 * 60 * 60; // 24 hours
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
 
-export function buildApp(opts?: { baseUrl?: string }) {
+export { DEFAULT_TTL_SEC, MAX_TTL_SEC, MAX_MARKDOWN_BYTES, SLUG_LENGTH };
+
+export function buildApp(opts?: { baseUrl?: string; store?: PageStore }) {
   const baseUrl = opts?.baseUrl ?? '';
+  const store = opts?.store ?? new MemoryStore();
 
   const app = Fastify({ logger: false });
 
@@ -60,7 +64,7 @@ export function buildApp(opts?: { baseUrl?: string }) {
     // Render markdown to sanitized HTML
     const html = renderMarkdown(markdown);
 
-    store.set({ slug, html, markdown, createdAt: now, expiresAt });
+    await store.set({ slug, html, markdown, createdAt: now, expiresAt });
 
     const url = `${baseUrl}/${slug}`;
     return reply.status(201).send({ url, slug, expiresAt: new Date(expiresAt).toISOString() });
@@ -69,7 +73,7 @@ export function buildApp(opts?: { baseUrl?: string }) {
   // POST /api/burn/:slug
   app.post<{ Params: { slug: string } }>('/api/burn/:slug', async (request, reply) => {
     const { slug } = request.params;
-    const burned = store.burn(slug);
+    const burned = await store.burn(slug);
     if (!burned) {
       return reply.status(404).send({ error: 'page not found' });
     }
@@ -79,7 +83,7 @@ export function buildApp(opts?: { baseUrl?: string }) {
   // GET /:slug — serve rendered page
   app.get<{ Params: { slug: string } }>('/:slug', async (request, reply) => {
     const { slug } = request.params;
-    const page = store.get(slug);
+    const page = await store.get(slug);
 
     if (!page) {
       return reply.status(404).type('text/html').send(notFoundTemplate());
@@ -105,9 +109,10 @@ if (isMain) {
   const HOST = process.env.HOST ?? '0.0.0.0';
   const BASE_URL = process.env.BASE_URL ?? `http://localhost:${PORT}`;
 
-  store.startSweep();
+  const memStore = new MemoryStore();
+  memStore.startSweep();
 
-  const app = buildApp({ baseUrl: BASE_URL });
+  const app = buildApp({ baseUrl: BASE_URL, store: memStore });
   app.listen({ port: PORT, host: HOST }, (err, address) => {
     if (err) {
       console.error(err);

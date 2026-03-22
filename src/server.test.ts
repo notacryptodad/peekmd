@@ -1,18 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { buildApp } from './server.js';
-import * as store from './store.js';
+import { MemoryStore } from './memory-store.js';
 
 const BASE_URL = 'http://localhost:3000';
 
+let memStore: MemoryStore;
+
 function app() {
-  return buildApp({ baseUrl: BASE_URL });
+  memStore = new MemoryStore();
+  return buildApp({ baseUrl: BASE_URL, store: memStore });
 }
 
 describe('peekmd API', () => {
-  beforeEach(() => {
-    store.clear();
-  });
-
   // ─── POST /api/create ───────────────────────────────────────────
 
   describe('POST /api/create', () => {
