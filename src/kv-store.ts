@@ -19,17 +19,20 @@ export class KVStore implements PageStore {
     if (!raw) return undefined;
     const page: Page = JSON.parse(raw);
     // Double-check expiry (KV TTL is eventually consistent)
-    if (page.expiresAt <= Date.now()) {
+    // expiresAt = 0 means permanent
+    if (page.expiresAt > 0 && page.expiresAt <= Date.now()) {
       return undefined;
     }
     return page;
   }
 
   async set(page: Page): Promise<void> {
-    const ttlSec = Math.max(1, Math.ceil((page.expiresAt - Date.now()) / 1000));
-    await this.kv.put(`page:${page.slug}`, JSON.stringify(page), {
-      expirationTtl: ttlSec,
-    });
+    // Permanent pages (expiresAt = 0) have no KV TTL
+    const opts: { expirationTtl?: number } =
+      page.expiresAt > 0
+        ? { expirationTtl: Math.max(1, Math.ceil((page.expiresAt - Date.now()) / 1000)) }
+        : {};
+    await this.kv.put(`page:${page.slug}`, JSON.stringify(page), opts);
   }
 
   async burn(slug: string): Promise<boolean> {

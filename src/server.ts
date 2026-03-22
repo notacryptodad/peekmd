@@ -4,17 +4,29 @@ import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
 import { pageTemplate, notFoundTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
+import { detectTier, validateTierTtl, TIER_CONFIGS } from './tiers.js';
+import type { StripeService } from './stripe.js';
+import { MockStripeService, InMemoryApiKeyStore, StripeClient } from './stripe.js';
+import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
+import type { X402Config } from './x402.js';
 
-const DEFAULT_TTL_SEC = 5 * 60; // 5 minutes
-const MAX_TTL_SEC = 24 * 60 * 60; // 24 hours
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
 
-export { DEFAULT_TTL_SEC, MAX_TTL_SEC, MAX_MARKDOWN_BYTES, SLUG_LENGTH };
+export { MAX_MARKDOWN_BYTES, SLUG_LENGTH };
 
-export function buildApp(opts?: { baseUrl?: string; store?: PageStore }) {
+export interface AppOptions {
+  baseUrl?: string;
+  store?: PageStore;
+  stripe?: StripeService;
+  x402?: Partial<X402Config>;
+}
+
+export function buildApp(opts?: AppOptions) {
   const baseUrl = opts?.baseUrl ?? '';
   const store = opts?.store ?? new MemoryStore();
+  const stripe = opts?.stripe ?? new MockStripeService();
+  const x402Config = opts?.x402 ?? {};
 
   const app = Fastify({ logger: false });
 
@@ -22,7 +34,7 @@ export function buildApp(opts?: { baseUrl?: string; store?: PageStore }) {
   app.addHook('onSend', async (_req, reply) => {
     reply.header(
       'Content-Security-Policy',
-      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; frame-ancestors 'none'"
+      "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self'; frame-ancestors 'none'",
     );
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
@@ -46,28 +58,78 @@ export function buildApp(opts?: { baseUrl?: string; store?: PageStore }) {
       return reply.status(400).send({ error: `markdown exceeds maximum size of ${MAX_MARKDOWN_BYTES} bytes` });
     }
 
-    // Validate TTL
-    let ttlSec = DEFAULT_TTL_SEC;
-    if (ttl !== undefined) {
-      if (typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl < 1 || ttl > MAX_TTL_SEC) {
-        return reply.status(400).send({
-          error: `ttl must be a number between 1 and ${MAX_TTL_SEC} seconds`,
+    // Detect payment tier from headers
+    const authorization = request.headers.authorization ?? null;
+    const paymentHeader =
+      (request.headers['x-payment'] as string) ?? null;
+    const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
+
+    // Validate TTL for detected tier
+    const ttlResult = validateTierTtl(ttl, tier);
+    if (!ttlResult.ok) {
+      if (ttlResult.reason === 'payment_required') {
+        // If x402 is configured, return 402 with payment details
+        if (isX402Configured(x402Config)) {
+          const { body, header } = buildPaymentRequired(x402Config as X402Config, `${baseUrl}/api/create`);
+          return reply
+            .status(402)
+            .header('X-Payment-Required', header)
+            .send(body);
+        }
+        return reply.status(402).send({
+          error: 'payment_required',
+          message: `TTL exceeds free tier limit of ${TIER_CONFIGS.free.maxTtlSec} seconds. Use a Stripe API key or x402 payment for extended TTL.`,
         });
       }
-      ttlSec = Math.floor(ttl);
+      return reply.status(400).send({ error: 'ttl must be a finite number >= 0' });
+    }
+    const ttlSec = ttlResult.ttlSec;
+
+    // Stripe tier: validate API key and record usage
+    if (tier === 'stripe') {
+      if (!apiKey) {
+        return reply.status(401).send({ error: 'Missing API key' });
+      }
+      const keyRecord = await stripe.validateApiKey(apiKey);
+      if (!keyRecord) {
+        return reply.status(401).send({ error: 'Invalid API key' });
+      }
+      // Record usage (fire-and-forget, don't block page creation)
+      stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
+    }
+
+    // x402 tier: verify payment receipt
+    if (tier === 'x402') {
+      if (!receipt) {
+        return reply.status(400).send({ error: 'Missing X-PAYMENT header' });
+      }
+      if (!isX402Configured(x402Config)) {
+        return reply.status(501).send({ error: 'x402 payments not configured on this server' });
+      }
+      const payResult = await verifyPayment(receipt, x402Config as X402Config, `${baseUrl}/api/create`);
+      if (!payResult.valid) {
+        return reply.status(402).send({
+          error: 'payment_failed',
+          message: payResult.error ?? 'Payment verification failed',
+        });
+      }
     }
 
     const slug = nanoid(SLUG_LENGTH);
     const now = Date.now();
-    const expiresAt = now + ttlSec * 1000;
+    const expiresAt = ttlSec === 0 ? 0 : now + ttlSec * 1000;
 
-    // Render markdown to sanitized HTML
     const html = renderMarkdown(markdown);
 
-    await store.set({ slug, html, markdown, createdAt: now, expiresAt });
+    await store.set({ slug, html, markdown, createdAt: now, expiresAt, tier });
 
     const url = `${baseUrl}/${slug}`;
-    return reply.status(201).send({ url, slug, expiresAt: new Date(expiresAt).toISOString() });
+    return reply.status(201).send({
+      url,
+      slug,
+      expiresAt: expiresAt === 0 ? null : new Date(expiresAt).toISOString(),
+      tier,
+    });
   });
 
   // POST /api/burn/:slug
@@ -80,6 +142,49 @@ export function buildApp(opts?: { baseUrl?: string; store?: PageStore }) {
     return reply.status(200).send({ ok: true });
   });
 
+  // GET /api/billing/status — Stripe billing status
+  app.get('/api/billing/status', async (request, reply) => {
+    const authorization = request.headers.authorization;
+    if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+      return reply.status(401).send({ error: 'Stripe API key required' });
+    }
+    const apiKey = authorization.replace(/^Bearer\s+/i, '');
+    const keyRecord = await stripe.validateApiKey(apiKey);
+    if (!keyRecord) {
+      return reply.status(401).send({ error: 'Invalid API key' });
+    }
+    const status = await stripe.getBillingStatus(keyRecord.stripeCustomerId);
+    return reply.send(status);
+  });
+
+  // GET /api/pricing — show pricing info for all tiers
+  app.get('/api/pricing', async (_request, reply) => {
+    return reply.send({
+      free: {
+        maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
+        adBanner: true,
+        price: 'free',
+      },
+      stripe: {
+        maxTtlSeconds: 'unlimited',
+        adBanner: false,
+        pricePerPage: {
+          upTo1Hour: '$0.001',
+          upTo24Hours: '$0.005',
+          permanent: '$0.01',
+        },
+        auth: 'Authorization: Bearer sk_...',
+      },
+      x402: {
+        maxTtlSeconds: 'unlimited',
+        adBanner: false,
+        pricePerPage: '0.01 USDC',
+        auth: 'X-PAYMENT header (HTTP 402 flow)',
+        configured: isX402Configured(x402Config),
+      },
+    });
+  });
+
   // GET /:slug — serve rendered page
   app.get<{ Params: { slug: string } }>('/:slug', async (request, reply) => {
     const { slug } = request.params;
@@ -89,11 +194,15 @@ export function buildApp(opts?: { baseUrl?: string; store?: PageStore }) {
       return reply.status(404).type('text/html').send(notFoundTemplate());
     }
 
+    const tier = page.tier ?? 'free';
+    const showAdBanner = TIER_CONFIGS[tier].showAdBanner;
+
     const html = pageTemplate({
       html: page.html,
       slug: page.slug,
       expiresAt: page.expiresAt,
       baseUrl,
+      showAdBanner,
     });
 
     return reply.type('text/html').send(html);
@@ -112,7 +221,25 @@ if (isMain) {
   const memStore = new MemoryStore();
   memStore.startSweep();
 
-  const app = buildApp({ baseUrl: BASE_URL, store: memStore });
+  // Stripe config
+  const apiKeyStore = new InMemoryApiKeyStore(process.env.STRIPE_API_KEYS);
+  const stripeService: StripeService = process.env.STRIPE_SECRET_KEY
+    ? new StripeClient({
+        secretKey: process.env.STRIPE_SECRET_KEY,
+        keyStore: apiKeyStore,
+        meterEventName: process.env.STRIPE_METER_EVENT_NAME,
+      })
+    : new MockStripeService(apiKeyStore);
+
+  // x402 config
+  const x402Config: Partial<X402Config> = {
+    walletAddress: process.env.X402_WALLET_ADDRESS,
+    network: process.env.X402_NETWORK ?? 'base-sepolia',
+    facilitatorUrl: process.env.X402_FACILITATOR_URL ?? 'https://x402.org/facilitator',
+    assetAddress: process.env.X402_ASSET_ADDRESS,
+  };
+
+  const app = buildApp({ baseUrl: BASE_URL, store: memStore, stripe: stripeService, x402: x402Config });
   app.listen({ port: PORT, host: HOST }, (err, address) => {
     if (err) {
       console.error(err);

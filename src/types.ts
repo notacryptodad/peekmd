@@ -2,12 +2,15 @@
  * Shared types for peekmd.
  */
 
+import type { Tier } from './tiers.js';
+
 export interface Page {
   slug: string;
   html: string;
   markdown: string;
   createdAt: number;
-  expiresAt: number;
+  expiresAt: number; // 0 = never expires (permanent page)
+  tier?: Tier; // defaults to 'free' for backwards compat
 }
 
 /**

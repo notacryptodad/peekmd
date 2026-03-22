@@ -6,10 +6,12 @@
 export function pageTemplate(opts: {
   html: string;
   slug: string;
-  expiresAt: number;
+  expiresAt: number; // 0 = permanent
   baseUrl: string;
+  showAdBanner?: boolean;
 }): string {
-  const { html, slug, expiresAt, baseUrl } = opts;
+  const { html, slug, expiresAt, baseUrl, showAdBanner = false } = opts;
+  const isPermanent = expiresAt === 0;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -234,6 +236,21 @@ body {
   font-size: 1.1em;
 }
 
+/* Ad banner (free tier) */
+.ad-banner {
+  border-top: 1px solid var(--border);
+  padding: 16px 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--table-stripe);
+}
+.ad-banner a {
+  color: var(--link);
+  text-decoration: none;
+}
+.ad-banner a:hover { text-decoration: underline; }
+
 /* highlight.js theme overrides (Catppuccin-style) */
 .hljs-keyword { color: #cba6f7; }
 .hljs-string { color: #a6e3a1; }
@@ -271,6 +288,12 @@ body {
 <div class="content" id="content">
 ${html}
 </div>
+${showAdBanner ? `
+<div class="ad-banner">
+  Shared with <a href="https://peekmd.com">peekmd</a> &mdash; beautiful markdown, one link away.
+  Upgrade for longer TTLs and no banner.
+</div>
+` : ''}
 
 <script>
 (function() {
@@ -301,38 +324,45 @@ ${html}
 
   // Countdown timer
   var expiresAt = ${expiresAt};
-  var createdNow = Date.now();
-  var totalDuration = expiresAt - createdNow;
   var countdownEl = document.getElementById('countdown');
   var progressEl = document.getElementById('progress');
 
-  function updateCountdown() {
-    var remaining = expiresAt - Date.now();
-    if (remaining <= 0) {
-      countdownEl.textContent = 'expired';
-      progressEl.style.width = '0%';
-      document.body.classList.add('expired');
-      return;
-    }
-    var pct = Math.max(0, (remaining / totalDuration) * 100);
-    progressEl.style.width = pct + '%';
+  if (expiresAt === 0) {
+    // Permanent page — no countdown
+    countdownEl.textContent = 'permanent';
+    progressEl.style.width = '100%';
+  } else {
+    var createdNow = Date.now();
+    var totalDuration = expiresAt - createdNow;
 
-    var secs = Math.floor(remaining / 1000);
-    var mins = Math.floor(secs / 60);
-    var hrs = Math.floor(mins / 60);
-    secs = secs % 60;
-    mins = mins % 60;
+    function updateCountdown() {
+      var remaining = expiresAt - Date.now();
+      if (remaining <= 0) {
+        countdownEl.textContent = 'expired';
+        progressEl.style.width = '0%';
+        document.body.classList.add('expired');
+        return;
+      }
+      var pct = Math.max(0, (remaining / totalDuration) * 100);
+      progressEl.style.width = pct + '%';
 
-    if (hrs > 0) {
-      countdownEl.textContent = hrs + 'h ' + mins + 'm ' + secs + 's';
-    } else if (mins > 0) {
-      countdownEl.textContent = mins + 'm ' + secs + 's';
-    } else {
-      countdownEl.textContent = secs + 's';
+      var secs = Math.floor(remaining / 1000);
+      var mins = Math.floor(secs / 60);
+      var hrs = Math.floor(mins / 60);
+      secs = secs % 60;
+      mins = mins % 60;
+
+      if (hrs > 0) {
+        countdownEl.textContent = hrs + 'h ' + mins + 'm ' + secs + 's';
+      } else if (mins > 0) {
+        countdownEl.textContent = mins + 'm ' + secs + 's';
+      } else {
+        countdownEl.textContent = secs + 's';
+      }
+      requestAnimationFrame(updateCountdown);
     }
-    requestAnimationFrame(updateCountdown);
+    updateCountdown();
   }
-  updateCountdown();
 
   // Burn button
   document.getElementById('burn-btn').addEventListener('click', function() {

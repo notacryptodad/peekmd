@@ -8,15 +8,24 @@ import { renderMarkdown } from './render.js';
 import { pageTemplate, notFoundTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
+import { detectTier, validateTierTtl, TIER_CONFIGS } from './tiers.js';
+import { InMemoryApiKeyStore, MockStripeService } from './stripe.js';
+import type { StripeService } from './stripe.js';
+import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
+import type { X402Config } from './x402.js';
 
-const DEFAULT_TTL_SEC = 5 * 60;
-const MAX_TTL_SEC = 24 * 60 * 60;
 const MAX_MARKDOWN_BYTES = 512_000;
 const SLUG_LENGTH = 8;
 
 interface Env {
   PAGES: KVNamespace;
   BASE_URL?: string;
+  STRIPE_API_KEYS?: string;
+  STRIPE_SECRET_KEY?: string;
+  X402_WALLET_ADDRESS?: string;
+  X402_NETWORK?: string;
+  X402_FACILITATOR_URL?: string;
+  X402_ASSET_ADDRESS?: string;
 }
 
 const CSP_HEADERS = {
@@ -27,10 +36,10 @@ const CSP_HEADERS = {
   'Referrer-Policy': 'no-referrer',
 };
 
-function json(data: unknown, status = 200): Response {
+function json(data: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...CSP_HEADERS },
+    headers: { 'Content-Type': 'application/json', ...CSP_HEADERS, ...extraHeaders },
   });
 }
 
@@ -41,7 +50,28 @@ function html(body: string, status = 200): Response {
   });
 }
 
-async function handleCreate(request: Request, store: PageStore, baseUrl: string): Promise<Response> {
+function getStripeService(env: Env): StripeService {
+  const apiKeyStore = new InMemoryApiKeyStore(env.STRIPE_API_KEYS);
+  // Cloudflare Workers: use mock service (real Stripe calls would need a different pattern)
+  return new MockStripeService(apiKeyStore);
+}
+
+function getX402Config(env: Env): Partial<X402Config> {
+  return {
+    walletAddress: env.X402_WALLET_ADDRESS,
+    network: env.X402_NETWORK ?? 'base-sepolia',
+    facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://x402.org/facilitator',
+    assetAddress: env.X402_ASSET_ADDRESS,
+  };
+}
+
+async function handleCreate(
+  request: Request,
+  store: PageStore,
+  baseUrl: string,
+  stripe: StripeService,
+  x402Config: Partial<X402Config>,
+): Promise<Response> {
   let body: { markdown?: string; ttl?: number };
   try {
     body = await request.json();
@@ -58,23 +88,60 @@ async function handleCreate(request: Request, store: PageStore, baseUrl: string)
     return json({ error: `markdown exceeds maximum size of ${MAX_MARKDOWN_BYTES} bytes` }, 400);
   }
 
-  let ttlSec = DEFAULT_TTL_SEC;
-  if (ttl !== undefined) {
-    if (typeof ttl !== 'number' || !Number.isFinite(ttl) || ttl < 1 || ttl > MAX_TTL_SEC) {
-      return json({ error: `ttl must be a number between 1 and ${MAX_TTL_SEC} seconds` }, 400);
+  // Detect payment tier
+  const authorization = request.headers.get('authorization');
+  const paymentHeader = request.headers.get('x-payment');
+  const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
+
+  // Validate TTL for tier
+  const ttlResult = validateTierTtl(ttl, tier);
+  if (!ttlResult.ok) {
+    if (ttlResult.reason === 'payment_required') {
+      if (isX402Configured(x402Config)) {
+        const { body: prBody, header } = buildPaymentRequired(x402Config as X402Config, `${baseUrl}/api/create`);
+        return json(prBody, 402, { 'X-Payment-Required': header });
+      }
+      return json(
+        {
+          error: 'payment_required',
+          message: `TTL exceeds free tier limit of ${TIER_CONFIGS.free.maxTtlSec} seconds. Use a Stripe API key or x402 payment for extended TTL.`,
+        },
+        402,
+      );
     }
-    ttlSec = Math.floor(ttl);
+    return json({ error: 'ttl must be a finite number >= 0' }, 400);
+  }
+  const ttlSec = ttlResult.ttlSec;
+
+  // Stripe: validate API key
+  if (tier === 'stripe') {
+    if (!apiKey) return json({ error: 'Missing API key' }, 401);
+    const keyRecord = await stripe.validateApiKey(apiKey);
+    if (!keyRecord) return json({ error: 'Invalid API key' }, 401);
+    stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
+  }
+
+  // x402: verify payment
+  if (tier === 'x402') {
+    if (!receipt) return json({ error: 'Missing X-PAYMENT header' }, 400);
+    if (!isX402Configured(x402Config)) {
+      return json({ error: 'x402 payments not configured' }, 501);
+    }
+    const payResult = await verifyPayment(receipt, x402Config as X402Config, `${baseUrl}/api/create`);
+    if (!payResult.valid) {
+      return json({ error: 'payment_failed', message: payResult.error }, 402);
+    }
   }
 
   const slug = nanoid(SLUG_LENGTH);
   const now = Date.now();
-  const expiresAt = now + ttlSec * 1000;
+  const expiresAt = ttlSec === 0 ? 0 : now + ttlSec * 1000;
   const renderedHtml = renderMarkdown(markdown);
 
-  await store.set({ slug, html: renderedHtml, markdown, createdAt: now, expiresAt });
+  await store.set({ slug, html: renderedHtml, markdown, createdAt: now, expiresAt, tier });
 
   const url = `${baseUrl}/${slug}`;
-  return json({ url, slug, expiresAt: new Date(expiresAt).toISOString() }, 201);
+  return json({ url, slug, expiresAt: expiresAt === 0 ? null : new Date(expiresAt).toISOString(), tier }, 201);
 }
 
 async function handleBurn(slug: string, store: PageStore): Promise<Response> {
@@ -90,14 +157,46 @@ async function handleGet(slug: string, store: PageStore, baseUrl: string): Promi
   if (!page) {
     return html(notFoundTemplate(), 404);
   }
+
+  const tier = page.tier ?? 'free';
+  const showAdBanner = TIER_CONFIGS[tier].showAdBanner;
+
   return html(
     pageTemplate({
       html: page.html,
       slug: page.slug,
       expiresAt: page.expiresAt,
       baseUrl,
-    })
+      showAdBanner,
+    }),
   );
+}
+
+function handlePricing(x402Config: Partial<X402Config>): Response {
+  return json({
+    free: {
+      maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
+      adBanner: true,
+      price: 'free',
+    },
+    stripe: {
+      maxTtlSeconds: 'unlimited',
+      adBanner: false,
+      pricePerPage: {
+        upTo1Hour: '$0.001',
+        upTo24Hours: '$0.005',
+        permanent: '$0.01',
+      },
+      auth: 'Authorization: Bearer sk_...',
+    },
+    x402: {
+      maxTtlSeconds: 'unlimited',
+      adBanner: false,
+      pricePerPage: '0.01 USDC',
+      auth: 'X-PAYMENT header (HTTP 402 flow)',
+      configured: isX402Configured(x402Config),
+    },
+  });
 }
 
 export default {
@@ -105,19 +204,37 @@ export default {
     const store = new KVStore(env.PAGES);
     const url = new URL(request.url);
     const baseUrl = env.BASE_URL || url.origin;
+    const stripe = getStripeService(env);
+    const x402Config = getX402Config(env);
 
     // Route matching
     if (url.pathname === '/health' && request.method === 'GET') {
       return json({ status: 'ok' });
     }
 
+    if (url.pathname === '/api/pricing' && request.method === 'GET') {
+      return handlePricing(x402Config);
+    }
+
     if (url.pathname === '/api/create' && request.method === 'POST') {
-      return handleCreate(request, store, baseUrl);
+      return handleCreate(request, store, baseUrl, stripe, x402Config);
     }
 
     const burnMatch = url.pathname.match(/^\/api\/burn\/([^/]+)$/);
     if (burnMatch && request.method === 'POST') {
       return handleBurn(burnMatch[1], store);
+    }
+
+    if (url.pathname === '/api/billing/status' && request.method === 'GET') {
+      const authorization = request.headers.get('authorization');
+      if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+        return json({ error: 'Stripe API key required' }, 401);
+      }
+      const apiKey = authorization.replace(/^Bearer\s+/i, '');
+      const keyRecord = await stripe.validateApiKey(apiKey);
+      if (!keyRecord) return json({ error: 'Invalid API key' }, 401);
+      const status = await stripe.getBillingStatus(keyRecord.stripeCustomerId);
+      return json(status);
     }
 
     const slugMatch = url.pathname.match(/^\/([^/]+)$/);

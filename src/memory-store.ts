@@ -12,7 +12,8 @@ export class MemoryStore implements PageStore {
   async get(slug: string): Promise<Page | undefined> {
     const page = this.pages.get(slug);
     if (!page) return undefined;
-    if (page.expiresAt <= Date.now()) {
+    // expiresAt = 0 means permanent (never expires)
+    if (page.expiresAt > 0 && page.expiresAt <= Date.now()) {
       this.pages.delete(slug);
       return undefined;
     }
@@ -52,7 +53,7 @@ export class MemoryStore implements PageStore {
   private sweep(): void {
     const now = Date.now();
     for (const [slug, page] of this.pages) {
-      if (page.expiresAt <= now) {
+      if (page.expiresAt > 0 && page.expiresAt <= now) {
         this.pages.delete(slug);
       }
     }

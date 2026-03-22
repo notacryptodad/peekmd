@@ -1,21 +1,32 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { buildApp } from './server.js';
 import { MemoryStore } from './memory-store.js';
+import { MockStripeService, InMemoryApiKeyStore } from './stripe.js';
 
 const BASE_URL = 'http://localhost:3000';
 
-let memStore: MemoryStore;
+function app(opts?: { stripe?: MockStripeService; x402?: object }) {
+  const memStore = new MemoryStore();
+  return buildApp({
+    baseUrl: BASE_URL,
+    store: memStore,
+    stripe: opts?.stripe,
+    x402: opts?.x402,
+  });
+}
 
-function app() {
-  memStore = new MemoryStore();
-  return buildApp({ baseUrl: BASE_URL, store: memStore });
+function stripeApp() {
+  const keyStore = new InMemoryApiKeyStore();
+  keyStore.add('sk_test_valid', 'cus_test123');
+  const stripe = new MockStripeService(keyStore);
+  return { server: app({ stripe }), stripe };
 }
 
 describe('peekmd API', () => {
-  // ─── POST /api/create ───────────────────────────────────────────
+  // ─── POST /api/create (Free tier) ────────────────────────────
 
-  describe('POST /api/create', () => {
-    it('creates a page and returns url + slug + expiresAt', async () => {
+  describe('POST /api/create (free tier)', () => {
+    it('creates a page and returns url + slug + expiresAt + tier', async () => {
       const server = app();
       const res = await server.inject({
         method: 'POST',
@@ -27,14 +38,15 @@ describe('peekmd API', () => {
       expect(body.url).toMatch(/^http:\/\/localhost:3000\/.+/);
       expect(body.slug).toBeDefined();
       expect(body.expiresAt).toBeDefined();
-      // expiresAt should be a valid ISO date ~5min from now
+      expect(body.tier).toBe('free');
+      // Free tier default: 5 min
       const expires = new Date(body.expiresAt).getTime();
       const now = Date.now();
       expect(expires - now).toBeGreaterThan(4 * 60 * 1000);
       expect(expires - now).toBeLessThan(6 * 60 * 1000);
     });
 
-    it('accepts custom ttl', async () => {
+    it('accepts custom ttl within free limits', async () => {
       const server = app();
       const res = await server.inject({
         method: 'POST',
@@ -47,6 +59,28 @@ describe('peekmd API', () => {
       const now = Date.now();
       expect(expires - now).toBeGreaterThan(55 * 1000);
       expect(expires - now).toBeLessThan(65 * 1000);
+    });
+
+    it('returns 402 for ttl exceeding free tier', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Test', ttl: 3600 },
+      });
+      expect(res.statusCode).toBe(402);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('payment_required');
+    });
+
+    it('returns 402 for permanent page on free tier', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Test', ttl: 0 },
+      });
+      expect(res.statusCode).toBe(402);
     });
 
     it('rejects empty markdown', async () => {
@@ -70,7 +104,7 @@ describe('peekmd API', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    it('rejects ttl out of range', async () => {
+    it('rejects invalid ttl', async () => {
       const server = app();
       const res = await server.inject({
         method: 'POST',
@@ -78,13 +112,6 @@ describe('peekmd API', () => {
         payload: { markdown: '# Test', ttl: -1 },
       });
       expect(res.statusCode).toBe(400);
-
-      const res2 = await server.inject({
-        method: 'POST',
-        url: '/api/create',
-        payload: { markdown: '# Test', ttl: 100000 },
-      });
-      expect(res2.statusCode).toBe(400);
     });
 
     it('rejects oversized markdown', async () => {
@@ -100,12 +127,70 @@ describe('peekmd API', () => {
     });
   });
 
-  // ─── GET /:slug ─────────────────────────────────────────────────
+  // ─── POST /api/create (Stripe tier) ──────────────────────────
+
+  describe('POST /api/create (stripe tier)', () => {
+    it('creates page with extended TTL for valid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Stripe page', ttl: 3600 },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.tier).toBe('stripe');
+      const expires = new Date(body.expiresAt).getTime();
+      expect(expires - Date.now()).toBeGreaterThan(3500 * 1000);
+    });
+
+    it('creates permanent page for valid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Permanent', ttl: 0 },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.expiresAt).toBeNull();
+      expect(body.tier).toBe('stripe');
+    });
+
+    it('records usage for stripe pages', async () => {
+      const { server, stripe } = stripeApp();
+      await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Test' },
+      });
+      // Give fire-and-forget a moment
+      await new Promise((r) => setTimeout(r, 50));
+      expect(stripe.usageRecords.length).toBe(1);
+      expect(stripe.usageRecords[0].customerId).toBe('cus_test123');
+    });
+
+    it('rejects invalid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_invalid' },
+        payload: { markdown: '# Test' },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(JSON.parse(res.body).error).toContain('Invalid');
+    });
+  });
+
+  // ─── GET /:slug ─────────────────────────────────────────────
 
   describe('GET /:slug', () => {
     it('serves a rendered page', async () => {
       const server = app();
-      // Create a page first
       const createRes = await server.inject({
         method: 'POST',
         url: '/api/create',
@@ -122,6 +207,44 @@ describe('peekmd API', () => {
       expect(res.body).toContain('burn');
     });
 
+    it('shows ad banner for free tier pages', async () => {
+      const server = app();
+      const createRes = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Free page' },
+      });
+      const { slug } = JSON.parse(createRes.body);
+      const res = await server.inject({ method: 'GET', url: `/${slug}` });
+      expect(res.body).toContain('Upgrade for longer TTLs');
+    });
+
+    it('hides ad banner for stripe tier pages', async () => {
+      const { server } = stripeApp();
+      const createRes = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Paid page' },
+      });
+      const { slug } = JSON.parse(createRes.body);
+      const res = await server.inject({ method: 'GET', url: `/${slug}` });
+      expect(res.body).not.toContain('Upgrade for longer TTLs');
+    });
+
+    it('shows permanent for non-expiring pages', async () => {
+      const { server } = stripeApp();
+      const createRes = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Permanent', ttl: 0 },
+      });
+      const { slug } = JSON.parse(createRes.body);
+      const res = await server.inject({ method: 'GET', url: `/${slug}` });
+      expect(res.body).toContain('permanent');
+    });
+
     it('returns 404 for unknown slug', async () => {
       const server = app();
       const res = await server.inject({ method: 'GET', url: '/nonexistent' });
@@ -131,23 +254,19 @@ describe('peekmd API', () => {
 
     it('returns 404 for expired page', async () => {
       const server = app();
-      // Create a page with 1 second TTL
       const createRes = await server.inject({
         method: 'POST',
         url: '/api/create',
         payload: { markdown: '# Temp', ttl: 1 },
       });
       const { slug } = JSON.parse(createRes.body);
-
-      // Wait for expiry
       await new Promise((r) => setTimeout(r, 1100));
-
       const res = await server.inject({ method: 'GET', url: `/${slug}` });
       expect(res.statusCode).toBe(404);
     });
   });
 
-  // ─── POST /api/burn/:slug ──────────────────────────────────────
+  // ─── POST /api/burn/:slug ──────────────────────────────────
 
   describe('POST /api/burn/:slug', () => {
     it('burns a page', async () => {
@@ -158,14 +277,11 @@ describe('peekmd API', () => {
         payload: { markdown: '# Burn me' },
       });
       const { slug } = JSON.parse(createRes.body);
-
       const burnRes = await server.inject({
         method: 'POST',
         url: `/api/burn/${slug}`,
       });
       expect(burnRes.statusCode).toBe(200);
-
-      // Page should be gone
       const getRes = await server.inject({ method: 'GET', url: `/${slug}` });
       expect(getRes.statusCode).toBe(404);
     });
@@ -180,7 +296,67 @@ describe('peekmd API', () => {
     });
   });
 
-  // ─── Rendering ─────────────────────────────────────────────────
+  // ─── Billing endpoints ──────────────────────────────────────
+
+  describe('GET /api/billing/status', () => {
+    it('returns billing status for valid API key', async () => {
+      const { server, stripe } = stripeApp();
+      // Create some usage first
+      await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Test' },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/billing/status',
+        headers: { authorization: 'Bearer sk_test_valid' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.customerId).toBe('cus_test123');
+      expect(body.currentPeriodUsage).toBe(1);
+    });
+
+    it('rejects missing API key', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/billing/status',
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects invalid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/billing/status',
+        headers: { authorization: 'Bearer sk_test_bad' },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // ─── Pricing ────────────────────────────────────────────────
+
+  describe('GET /api/pricing', () => {
+    it('returns pricing info for all tiers', async () => {
+      const server = app();
+      const res = await server.inject({ method: 'GET', url: '/api/pricing' });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.free.maxTtlSeconds).toBe(300);
+      expect(body.free.adBanner).toBe(true);
+      expect(body.stripe.adBanner).toBe(false);
+      expect(body.x402.pricePerPage).toBe('0.01 USDC');
+    });
+  });
+
+  // ─── Rendering ─────────────────────────────────────────────
 
   describe('Rendering', () => {
     it('renders code blocks with syntax highlighting', async () => {
@@ -225,7 +401,7 @@ describe('peekmd API', () => {
     });
   });
 
-  // ─── Security ──────────────────────────────────────────────────
+  // ─── Security ──────────────────────────────────────────────
 
   describe('Security', () => {
     it('sets CSP headers', async () => {
@@ -246,7 +422,6 @@ describe('peekmd API', () => {
       });
       const { slug } = JSON.parse(createRes.body);
       const res = await server.inject({ method: 'GET', url: `/${slug}` });
-      // The injected script content should be stripped from the rendered markdown
       expect(res.body).not.toContain('alert("xss")');
     });
 
@@ -264,7 +439,7 @@ describe('peekmd API', () => {
     });
   });
 
-  // ─── Health ────────────────────────────────────────────────────
+  // ─── Health ────────────────────────────────────────────────
 
   describe('Health', () => {
     it('GET /health returns ok', async () => {
