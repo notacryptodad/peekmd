@@ -4,7 +4,7 @@ import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
 import { pageTemplate, notFoundTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
-import { detectTier, validateTierTtl, TIER_CONFIGS } from './tiers.js';
+import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY } from './tiers.js';
 import type { StripeService } from './stripe.js';
 import { MockStripeService, InMemoryApiKeyStore, StripeClient } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
@@ -20,6 +20,52 @@ export interface AppOptions {
   store?: PageStore;
   stripe?: StripeService;
   x402?: Partial<X402Config>;
+}
+
+/**
+ * Build the 402 response body for free-tier users requesting paid features.
+ * Explains upgrade options clearly for both agents and humans.
+ */
+function paymentRequiredResponse(
+  baseUrl: string,
+  x402Config: Partial<X402Config>,
+) {
+  const response: Record<string, unknown> = {
+    error: 'payment_required',
+    message:
+      'Free tier includes a 5-minute TTL and an ad banner on rendered pages. ' +
+      'To remove the banner and unlock extended TTLs (up to permanent), choose a payment method below.',
+    free: {
+      maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
+      adBanner: true,
+    },
+    upgrade: {
+      stripe: {
+        description:
+          'Subscribe for metered billing. After checkout you receive an API key ' +
+          'to pass as Authorization: Bearer sk_... on all requests.',
+        checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+        pricePerPage: '$0.001–$0.01 depending on TTL',
+      },
+      x402: isX402Configured(x402Config)
+        ? {
+            description:
+              'Pay per request with USDC (no account needed). ' +
+              'Send a request, receive 402 with payment details, pay, retry with X-PAYMENT header.',
+            pricePerPage: `${X402_PRICE_DISPLAY} USDC`,
+          }
+        : undefined,
+    },
+  };
+
+  // Also include x402 protocol header if configured
+  if (isX402Configured(x402Config)) {
+    const { body, header } = buildPaymentRequired(x402Config as X402Config, `${baseUrl}/api/create`);
+    response.x402 = (body as Record<string, unknown>).x402;
+    response._x402Header = header;
+  }
+
+  return response;
 }
 
 export function buildApp(opts?: AppOptions) {
@@ -60,26 +106,22 @@ export function buildApp(opts?: AppOptions) {
 
     // Detect payment tier from headers
     const authorization = request.headers.authorization ?? null;
-    const paymentHeader =
-      (request.headers['x-payment'] as string) ?? null;
+    const paymentHeader = (request.headers['x-payment'] as string) ?? null;
     const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
 
     // Validate TTL for detected tier
     const ttlResult = validateTierTtl(ttl, tier);
     if (!ttlResult.ok) {
       if (ttlResult.reason === 'payment_required') {
-        // If x402 is configured, return 402 with payment details
-        if (isX402Configured(x402Config)) {
-          const { body, header } = buildPaymentRequired(x402Config as X402Config, `${baseUrl}/api/create`);
-          return reply
-            .status(402)
-            .header('X-Payment-Required', header)
-            .send(body);
+        const body = paymentRequiredResponse(baseUrl, x402Config);
+        const headers: Record<string, string> = {};
+        if (body._x402Header) {
+          headers['X-Payment-Required'] = body._x402Header as string;
+          delete body._x402Header;
         }
-        return reply.status(402).send({
-          error: 'payment_required',
-          message: `TTL exceeds free tier limit of ${TIER_CONFIGS.free.maxTtlSec} seconds. Use a Stripe API key or x402 payment for extended TTL.`,
-        });
+        reply.status(402);
+        for (const [k, v] of Object.entries(headers)) reply.header(k, v);
+        return reply.send(body);
       }
       return reply.status(400).send({ error: 'ttl must be a finite number >= 0' });
     }
@@ -94,7 +136,6 @@ export function buildApp(opts?: AppOptions) {
       if (!keyRecord) {
         return reply.status(401).send({ error: 'Invalid API key' });
       }
-      // Record usage (fire-and-forget, don't block page creation)
       stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
     }
 
@@ -142,6 +183,51 @@ export function buildApp(opts?: AppOptions) {
     return reply.status(200).send({ ok: true });
   });
 
+  // ─── Stripe Checkout Flow ────────────────────────────────────
+
+  // POST /api/stripe/checkout — create a Stripe Checkout session
+  app.post('/api/stripe/checkout', async (_request, reply) => {
+    try {
+      const result = await stripe.createCheckoutSession(baseUrl);
+      return reply.send({
+        url: result.url,
+        sessionId: result.sessionId,
+        message: 'Redirect the user to the checkout URL. After payment, they will receive an API key.',
+      });
+    } catch (err) {
+      return reply.status(500).send({
+        error: 'checkout_failed',
+        message: (err as Error).message,
+      });
+    }
+  });
+
+  // GET /api/stripe/callback — handle post-checkout redirect, return API key
+  app.get<{
+    Querystring: { session_id?: string };
+  }>('/api/stripe/callback', async (request, reply) => {
+    const sessionId = request.query.session_id;
+    if (!sessionId) {
+      return reply.status(400).send({ error: 'Missing session_id parameter' });
+    }
+    try {
+      const result = await stripe.handleCheckoutCallback(sessionId);
+      return reply.send({
+        apiKey: result.apiKey,
+        customerId: result.customerId,
+        message:
+          'Subscription active. Use this API key as Authorization: Bearer ' +
+          result.apiKey +
+          ' on all requests to bypass the free tier limits and ad banner.',
+      });
+    } catch (err) {
+      return reply.status(400).send({
+        error: 'callback_failed',
+        message: (err as Error).message,
+      });
+    }
+  });
+
   // GET /api/billing/status — Stripe billing status
   app.get('/api/billing/status', async (request, reply) => {
     const authorization = request.headers.authorization;
@@ -174,11 +260,12 @@ export function buildApp(opts?: AppOptions) {
           permanent: '$0.01',
         },
         auth: 'Authorization: Bearer sk_...',
+        checkoutUrl: `${baseUrl}/api/stripe/checkout`,
       },
       x402: {
         maxTtlSeconds: 'unlimited',
         adBanner: false,
-        pricePerPage: '0.01 USDC',
+        pricePerPage: `${X402_PRICE_DISPLAY} USDC`,
         auth: 'X-PAYMENT header (HTTP 402 flow)',
         configured: isX402Configured(x402Config),
       },
@@ -228,6 +315,7 @@ if (isMain) {
         secretKey: process.env.STRIPE_SECRET_KEY,
         keyStore: apiKeyStore,
         meterEventName: process.env.STRIPE_METER_EVENT_NAME,
+        priceId: process.env.STRIPE_PRICE_ID,
       })
     : new MockStripeService(apiKeyStore);
 

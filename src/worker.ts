@@ -8,7 +8,7 @@ import { renderMarkdown } from './render.js';
 import { pageTemplate, notFoundTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
-import { detectTier, validateTierTtl, TIER_CONFIGS } from './tiers.js';
+import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY } from './tiers.js';
 import { InMemoryApiKeyStore, MockStripeService } from './stripe.js';
 import type { StripeService } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
@@ -22,6 +22,7 @@ interface Env {
   BASE_URL?: string;
   STRIPE_API_KEYS?: string;
   STRIPE_SECRET_KEY?: string;
+  STRIPE_PRICE_ID?: string;
   X402_WALLET_ADDRESS?: string;
   X402_NETWORK?: string;
   X402_FACILITATOR_URL?: string;
@@ -52,7 +53,6 @@ function html(body: string, status = 200): Response {
 
 function getStripeService(env: Env): StripeService {
   const apiKeyStore = new InMemoryApiKeyStore(env.STRIPE_API_KEYS);
-  // Cloudflare Workers: use mock service (real Stripe calls would need a different pattern)
   return new MockStripeService(apiKeyStore);
 }
 
@@ -63,6 +63,47 @@ function getX402Config(env: Env): Partial<X402Config> {
     facilitatorUrl: env.X402_FACILITATOR_URL ?? 'https://x402.org/facilitator',
     assetAddress: env.X402_ASSET_ADDRESS,
   };
+}
+
+function paymentRequiredResponse(
+  baseUrl: string,
+  x402Config: Partial<X402Config>,
+) {
+  const response: Record<string, unknown> = {
+    error: 'payment_required',
+    message:
+      'Free tier includes a 5-minute TTL and an ad banner on rendered pages. ' +
+      'To remove the banner and unlock extended TTLs (up to permanent), choose a payment method below.',
+    free: {
+      maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
+      adBanner: true,
+    },
+    upgrade: {
+      stripe: {
+        description:
+          'Subscribe for metered billing. After checkout you receive an API key ' +
+          'to pass as Authorization: Bearer sk_... on all requests.',
+        checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+        pricePerPage: '$0.001–$0.01 depending on TTL',
+      },
+      x402: isX402Configured(x402Config)
+        ? {
+            description:
+              'Pay per request with USDC (no account needed). ' +
+              'Send a request, receive 402 with payment details, pay, retry with X-PAYMENT header.',
+            pricePerPage: `${X402_PRICE_DISPLAY} USDC`,
+          }
+        : undefined,
+    },
+  };
+
+  if (isX402Configured(x402Config)) {
+    const { body, header } = buildPaymentRequired(x402Config as X402Config, `${baseUrl}/api/create`);
+    response.x402 = (body as Record<string, unknown>).x402;
+    response._x402Header = header;
+  }
+
+  return response;
 }
 
 async function handleCreate(
@@ -88,32 +129,25 @@ async function handleCreate(
     return json({ error: `markdown exceeds maximum size of ${MAX_MARKDOWN_BYTES} bytes` }, 400);
   }
 
-  // Detect payment tier
   const authorization = request.headers.get('authorization');
   const paymentHeader = request.headers.get('x-payment');
   const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
 
-  // Validate TTL for tier
   const ttlResult = validateTierTtl(ttl, tier);
   if (!ttlResult.ok) {
     if (ttlResult.reason === 'payment_required') {
-      if (isX402Configured(x402Config)) {
-        const { body: prBody, header } = buildPaymentRequired(x402Config as X402Config, `${baseUrl}/api/create`);
-        return json(prBody, 402, { 'X-Payment-Required': header });
+      const prBody = paymentRequiredResponse(baseUrl, x402Config);
+      const headers: Record<string, string> = {};
+      if (prBody._x402Header) {
+        headers['X-Payment-Required'] = prBody._x402Header as string;
+        delete prBody._x402Header;
       }
-      return json(
-        {
-          error: 'payment_required',
-          message: `TTL exceeds free tier limit of ${TIER_CONFIGS.free.maxTtlSec} seconds. Use a Stripe API key or x402 payment for extended TTL.`,
-        },
-        402,
-      );
+      return json(prBody, 402, headers);
     }
     return json({ error: 'ttl must be a finite number >= 0' }, 400);
   }
   const ttlSec = ttlResult.ttlSec;
 
-  // Stripe: validate API key
   if (tier === 'stripe') {
     if (!apiKey) return json({ error: 'Missing API key' }, 401);
     const keyRecord = await stripe.validateApiKey(apiKey);
@@ -121,7 +155,6 @@ async function handleCreate(
     stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
   }
 
-  // x402: verify payment
   if (tier === 'x402') {
     if (!receipt) return json({ error: 'Missing X-PAYMENT header' }, 400);
     if (!isX402Configured(x402Config)) {
@@ -172,7 +205,7 @@ async function handleGet(slug: string, store: PageStore, baseUrl: string): Promi
   );
 }
 
-function handlePricing(x402Config: Partial<X402Config>): Response {
+function handlePricing(baseUrl: string, x402Config: Partial<X402Config>): Response {
   return json({
     free: {
       maxTtlSeconds: TIER_CONFIGS.free.maxTtlSec,
@@ -188,11 +221,12 @@ function handlePricing(x402Config: Partial<X402Config>): Response {
         permanent: '$0.01',
       },
       auth: 'Authorization: Bearer sk_...',
+      checkoutUrl: `${baseUrl}/api/stripe/checkout`,
     },
     x402: {
       maxTtlSeconds: 'unlimited',
       adBanner: false,
-      pricePerPage: '0.01 USDC',
+      pricePerPage: `${X402_PRICE_DISPLAY} USDC`,
       auth: 'X-PAYMENT header (HTTP 402 flow)',
       configured: isX402Configured(x402Config),
     },
@@ -213,11 +247,43 @@ export default {
     }
 
     if (url.pathname === '/api/pricing' && request.method === 'GET') {
-      return handlePricing(x402Config);
+      return handlePricing(baseUrl, x402Config);
     }
 
     if (url.pathname === '/api/create' && request.method === 'POST') {
       return handleCreate(request, store, baseUrl, stripe, x402Config);
+    }
+
+    // Stripe Checkout flow
+    if (url.pathname === '/api/stripe/checkout' && request.method === 'POST') {
+      try {
+        const result = await stripe.createCheckoutSession(baseUrl);
+        return json({
+          url: result.url,
+          sessionId: result.sessionId,
+          message: 'Redirect the user to the checkout URL. After payment, they will receive an API key.',
+        });
+      } catch (err) {
+        return json({ error: 'checkout_failed', message: (err as Error).message }, 500);
+      }
+    }
+
+    if (url.pathname === '/api/stripe/callback' && request.method === 'GET') {
+      const sessionId = url.searchParams.get('session_id');
+      if (!sessionId) return json({ error: 'Missing session_id parameter' }, 400);
+      try {
+        const result = await stripe.handleCheckoutCallback(sessionId);
+        return json({
+          apiKey: result.apiKey,
+          customerId: result.customerId,
+          message:
+            'Subscription active. Use this API key as Authorization: Bearer ' +
+            result.apiKey +
+            ' on all requests to bypass the free tier limits and ad banner.',
+        });
+      } catch (err) {
+        return json({ error: 'callback_failed', message: (err as Error).message }, 400);
+      }
     }
 
     const burnMatch = url.pathname.match(/^\/api\/burn\/([^/]+)$/);

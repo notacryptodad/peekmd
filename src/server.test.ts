@@ -61,7 +61,7 @@ describe('peekmd API', () => {
       expect(expires - now).toBeLessThan(65 * 1000);
     });
 
-    it('returns 402 for ttl exceeding free tier', async () => {
+    it('returns 402 with upgrade instructions for ttl exceeding free tier', async () => {
       const server = app();
       const res = await server.inject({
         method: 'POST',
@@ -71,6 +71,12 @@ describe('peekmd API', () => {
       expect(res.statusCode).toBe(402);
       const body = JSON.parse(res.body);
       expect(body.error).toBe('payment_required');
+      // Should include clear upgrade instructions
+      expect(body.message).toContain('ad banner');
+      expect(body.upgrade).toBeDefined();
+      expect(body.upgrade.stripe).toBeDefined();
+      expect(body.upgrade.stripe.checkoutUrl).toContain('/api/stripe/checkout');
+      expect(body.upgrade.stripe.description).toContain('API key');
     });
 
     it('returns 402 for permanent page on free tier', async () => {
@@ -338,6 +344,93 @@ describe('peekmd API', () => {
         headers: { authorization: 'Bearer sk_test_bad' },
       });
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // ─── Stripe Checkout Flow ──────────────────────────────────
+
+  describe('Stripe Checkout Flow', () => {
+    it('POST /api/stripe/checkout creates a checkout session', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.url).toContain('/api/stripe/callback');
+      expect(body.sessionId).toBeDefined();
+    });
+
+    it('GET /api/stripe/callback returns API key after checkout', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+
+      // First create a checkout session
+      const checkoutRes = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+      });
+      const { sessionId } = JSON.parse(checkoutRes.body);
+
+      // Then handle the callback
+      const callbackRes = await server.inject({
+        method: 'GET',
+        url: `/api/stripe/callback?session_id=${sessionId}`,
+      });
+      expect(callbackRes.statusCode).toBe(200);
+      const body = JSON.parse(callbackRes.body);
+      expect(body.apiKey).toBeDefined();
+      expect(body.apiKey).toMatch(/^sk_/);
+      expect(body.customerId).toBeDefined();
+      expect(body.message).toContain('Authorization: Bearer');
+    });
+
+    it('API key from checkout works for page creation', async () => {
+      const stripe = new MockStripeService();
+      const server = app({ stripe });
+
+      // Create checkout session and get API key
+      const checkoutRes = await server.inject({
+        method: 'POST',
+        url: '/api/stripe/checkout',
+      });
+      const { sessionId } = JSON.parse(checkoutRes.body);
+      const callbackRes = await server.inject({
+        method: 'GET',
+        url: `/api/stripe/callback?session_id=${sessionId}`,
+      });
+      const { apiKey } = JSON.parse(callbackRes.body);
+
+      // Use the API key to create a page with extended TTL
+      const createRes = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: `Bearer ${apiKey}` },
+        payload: { markdown: '# Paid via checkout', ttl: 3600 },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const createBody = JSON.parse(createRes.body);
+      expect(createBody.tier).toBe('stripe');
+    });
+
+    it('GET /api/stripe/callback rejects missing session_id', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/stripe/callback',
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('GET /api/stripe/callback rejects invalid session_id', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/stripe/callback?session_id=invalid',
+      });
+      expect(res.statusCode).toBe(400);
     });
   });
 
