@@ -1,11 +1,12 @@
 name = "peekmd"
 main = "src/worker.ts"
 compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
 [[kv_namespaces]]
 binding = "PAGES"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+id = "fcaf0070253b484d8b5349957ba5b9cf"
+preview_id = "dc1bb955f5e84ddea2925ad197ddab96"
 
 [vars]
 # BASE_URL = "https://peekmd.example.com"

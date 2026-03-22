@@ -2,7 +2,8 @@ import Fastify from 'fastify';
 import { nanoid } from 'nanoid';
 import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
-import { pageTemplate, notFoundTemplate } from './template.js';
+import { sanitize } from './sanitize-node.js';
+import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY } from './tiers.js';
 import type { StripeService } from './stripe.js';
@@ -87,6 +88,11 @@ export function buildApp(opts?: AppOptions) {
     reply.header('Referrer-Policy', 'no-referrer');
   });
 
+  // Landing page
+  app.get('/', async (_request, reply) => {
+    return reply.type('text/html').send(landingTemplate(baseUrl));
+  });
+
   // Health check
   app.get('/health', async () => ({ status: 'ok' }));
 
@@ -160,7 +166,7 @@ export function buildApp(opts?: AppOptions) {
     const now = Date.now();
     const expiresAt = ttlSec === 0 ? 0 : now + ttlSec * 1000;
 
-    const html = renderMarkdown(markdown);
+    const html = renderMarkdown(markdown, sanitize);
 
     await store.set({ slug, html, markdown, createdAt: now, expiresAt, tier });
 

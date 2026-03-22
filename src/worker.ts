@@ -5,7 +5,8 @@
 
 import { nanoid } from 'nanoid';
 import { renderMarkdown } from './render.js';
-import { pageTemplate, notFoundTemplate } from './template.js';
+import { sanitize } from './sanitize-worker.js';
+import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY } from './tiers.js';
@@ -169,7 +170,7 @@ async function handleCreate(
   const slug = nanoid(SLUG_LENGTH);
   const now = Date.now();
   const expiresAt = ttlSec === 0 ? 0 : now + ttlSec * 1000;
-  const renderedHtml = renderMarkdown(markdown);
+  const renderedHtml = renderMarkdown(markdown, sanitize);
 
   await store.set({ slug, html: renderedHtml, markdown, createdAt: now, expiresAt, tier });
 
@@ -242,6 +243,10 @@ export default {
     const x402Config = getX402Config(env);
 
     // Route matching
+    if (url.pathname === '/' && request.method === 'GET') {
+      return html(landingTemplate(baseUrl));
+    }
+
     if (url.pathname === '/health' && request.method === 'GET') {
       return json({ status: 'ok' });
     }

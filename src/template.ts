@@ -383,6 +383,65 @@ ${showAdBanner ? `
 </html>`;
 }
 
+export function landingTemplate(baseUrl: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>peekmd — beautiful markdown, one link away</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #1a1a2e; color: #e2e8f0; min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 24px;
+}
+.hero { text-align: center; max-width: 600px; }
+h1 { font-size: 2.5em; font-weight: 700; margin-bottom: 0.3em; }
+h1 span { color: #60a5fa; }
+.tagline { font-size: 1.2em; color: #94a3b8; margin-bottom: 2em; }
+pre {
+  background: #11111b; color: #cdd6f4; padding: 20px 24px; border-radius: 10px;
+  text-align: left; overflow-x: auto; font-size: 0.85em; line-height: 1.6;
+  font-family: 'SF Mono', 'Fira Code', monospace; margin-bottom: 1.5em; width: 100%;
+}
+.comment { color: #6c7086; }
+.string { color: #a6e3a1; }
+.key { color: #89b4fa; }
+.info { color: #94a3b8; font-size: 0.9em; }
+.info a { color: #60a5fa; text-decoration: none; }
+.info a:hover { text-decoration: underline; }
+.features { display: flex; gap: 32px; margin-top: 2em; flex-wrap: wrap; justify-content: center; }
+.feature { text-align: center; }
+.feature dt { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
+.feature dd { color: #94a3b8; font-size: 0.85em; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>peek<span>md</span></h1>
+  <p class="tagline">Beautiful markdown, one link away.</p>
+  <pre><span class="comment"># Post markdown, get a shareable link</span>
+curl -X POST ${baseUrl}/api/create \\
+  -H <span class="string">"Content-Type: application/json"</span> \\
+  -d '{<span class="key">"markdown"</span>: <span class="string">"# Hello\\nYour markdown here."</span>}'
+
+<span class="comment"># Response:</span>
+{ <span class="key">"url"</span>: <span class="string">"${baseUrl}/abc123"</span>, <span class="key">"slug"</span>: <span class="string">"abc123"</span> }</pre>
+  <p class="info">Free tier: 5-min TTL. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
+  <dl class="features">
+    <div class="feature"><dt>Syntax highlighting</dt><dd>190+ languages</dd></div>
+    <div class="feature"><dt>Dark &amp; light mode</dt><dd>Auto-detected</dd></div>
+    <div class="feature"><dt>Auto-expiring</dt><dd>5m to permanent</dd></div>
+    <div class="feature"><dt>Burn after reading</dt><dd>One-click delete</dd></div>
+  </dl>
+</div>
+</body>
+</html>`;
+}
+
 export function notFoundTemplate(): string {
   return `<!DOCTYPE html>
 <html lang="en">
