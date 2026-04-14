@@ -236,18 +236,30 @@ body {
   font-size: 1.1em;
 }
 
-/* Ad banner (free tier) */
+/* Ad banner placeholder (free tier) */
 .ad-banner {
-  border-top: 1px solid var(--border);
-  padding: 16px 24px;
+  margin-top: 3em;
+  padding: 24px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
   text-align: center;
-  font-size: 12px;
-  color: var(--fg-muted);
   background: var(--table-stripe);
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ad-banner .ad-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+  opacity: 0.6;
 }
 .ad-banner a {
   color: var(--link);
   text-decoration: none;
+  font-weight: 600;
 }
 .ad-banner a:hover { text-decoration: underline; }
 
@@ -287,13 +299,14 @@ body {
 
 <div class="content" id="content">
 ${html}
-</div>
 ${showAdBanner ? `
 <div class="ad-banner">
-  Shared with <a href="https://peekmd.dev">peekmd</a> &mdash; beautiful markdown, one link away.
-  Upgrade for longer TTLs and no banner.
+  <span class="ad-label">Advertisement</span>
+  Shared with <a href="https://peekmd.com">peekmd</a> &mdash; beautiful markdown, one link away.
+  <a href="${baseUrl}/api/pricing">Upgrade to remove ads</a>
 </div>
 ` : ''}
+</div>
 
 <script>
 (function() {
@@ -398,9 +411,30 @@ export function landingTemplate(baseUrl: string): string {
 <meta property="og:title" content="peekmd — Share beautifully rendered markdown via API">
 <meta property="og:description" content="${description}">
 <meta property="og:url" content="${baseUrl}/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${baseUrl}/og-image.svg">
+<meta property="og:image:type" content="image/svg+xml">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="peekmd — Share beautifully rendered markdown via API">
 <meta name="twitter:description" content="${description}">
+<meta name="twitter:image" content="${baseUrl}/og-image.svg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "peekmd",
+  "description": "POST markdown to an API, get a shareable link to a beautifully rendered page.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "url": "${baseUrl}"
+}
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -431,23 +465,14 @@ pre {
 .feature { text-align: center; }
 .feature dt { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
 .feature dd { color: #94a3b8; font-size: 0.85em; }
-.cta-row { display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 2em; flex-wrap: wrap; }
 .demo-btn {
-  display: inline-block; padding: 12px 28px;
+  display: inline-block; margin-top: 2em; padding: 12px 28px;
   background: #60a5fa; color: #1a1a2e; font-weight: 600; font-size: 1em;
   border: none; border-radius: 8px; cursor: pointer; transition: background 0.15s;
   text-decoration: none;
 }
 .demo-btn:hover { background: #93c5fd; }
 .demo-btn:disabled { opacity: 0.6; cursor: wait; }
-.gh-cta {
-  display: inline-block; padding: 12px 28px;
-  background: transparent; color: #e2e8f0; font-weight: 600; font-size: 1em;
-  border: 1px solid #475569; border-radius: 8px; cursor: pointer; transition: all 0.15s;
-  text-decoration: none;
-}
-.gh-cta:hover { border-color: #94a3b8; color: #fff; }
-.info-group { margin-top: 1.5em; }
 .demo-result {
   margin-top: 1em; padding: 16px 20px; background: #11111b; border-radius: 8px;
   border: 1px solid #334155; display: none; text-align: center;
@@ -464,12 +489,94 @@ pre {
 .use-cases li { padding: 8px 0; color: #94a3b8; font-size: 0.95em; border-bottom: 1px solid #2d2d44; }
 .use-cases li:last-child { border-bottom: none; }
 .use-cases li strong { color: #e2e8f0; }
+
+/* Pricing section */
+.pricing { margin-top: 3em; width: 100%; }
+.pricing h2 { text-align: center; }
+.pricing-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  margin-top: 1.5em;
+}
+@media (max-width: 640px) { .pricing-grid { grid-template-columns: 1fr; } }
+.plan-card {
+  background: #11111b; border: 1px solid #334155; border-radius: 12px;
+  padding: 24px 20px; text-align: center; display: flex; flex-direction: column;
+}
+.plan-card.featured { border-color: #60a5fa; }
+.plan-name { font-weight: 700; font-size: 1.1em; color: #e2e8f0; margin-bottom: 4px; }
+.plan-price { font-size: 1.8em; font-weight: 700; color: #60a5fa; margin: 8px 0 4px; }
+.plan-price .period { font-size: 0.4em; color: #94a3b8; font-weight: 400; }
+.plan-details { list-style: none; padding: 0; margin: 12px 0 20px; text-align: left; }
+.plan-details li { padding: 4px 0; color: #94a3b8; font-size: 0.9em; }
+.plan-details li::before { content: "\\2713 "; color: #60a5fa; font-weight: 700; }
+.plan-cta {
+  display: inline-block; margin-top: auto; padding: 10px 20px;
+  border-radius: 8px; font-weight: 600; font-size: 0.95em;
+  text-decoration: none; transition: background 0.15s;
+}
+.plan-cta-free { background: #334155; color: #e2e8f0; cursor: default; }
+.plan-cta-paid { background: #60a5fa; color: #1a1a2e; }
+.plan-cta-paid:hover { background: #93c5fd; }
+
+/* GitHub star badge */
+.gh-badge {
+  display: inline-block; margin-top: 0.5em;
+}
+.gh-badge img { vertical-align: middle; }
+
+/* How it works */
+.how-it-works { margin-top: 2.5em; width: 100%; }
+.how-it-works h2 { text-align: center; }
+.steps {
+  display: flex; gap: 24px; margin-top: 1.5em; justify-content: center; flex-wrap: wrap;
+}
+.step {
+  flex: 1; min-width: 160px; max-width: 200px; text-align: center;
+  background: #11111b; border: 1px solid #334155; border-radius: 12px; padding: 20px 16px;
+}
+.step-num {
+  display: inline-block; width: 32px; height: 32px; line-height: 32px;
+  background: #60a5fa; color: #1a1a2e; border-radius: 50%;
+  font-weight: 700; font-size: 0.9em; margin-bottom: 8px;
+}
+.step-title { font-weight: 600; font-size: 1em; color: #e2e8f0; margin-bottom: 4px; }
+.step-desc { font-size: 0.85em; color: #94a3b8; }
+.step-arrow { display: flex; align-items: center; font-size: 1.5em; color: #475569; }
+@media (max-width: 640px) { .step-arrow { display: none; } }
+
+/* Code tabs */
+.code-tabs { margin-bottom: 1.5em; width: 100%; }
+.tab-bar {
+  display: flex; gap: 0; border-bottom: 1px solid #334155; margin-bottom: 0;
+}
+.tab-btn {
+  background: transparent; border: none; color: #94a3b8; padding: 8px 16px;
+  cursor: pointer; font-size: 0.85em; font-weight: 500;
+  border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.tab-btn:hover { color: #e2e8f0; }
+.tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.tab-panel pre { border-radius: 0 0 10px 10px; margin-top: 0; }
+
+/* Secondary CTA */
+.cta-row { display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 2em; flex-wrap: wrap; }
+.gh-cta {
+  display: inline-block; padding: 12px 28px;
+  background: transparent; color: #e2e8f0; font-weight: 600; font-size: 1em;
+  border: 1px solid #475569; border-radius: 8px; cursor: pointer; transition: all 0.15s;
+  text-decoration: none;
+}
+.gh-cta:hover { border-color: #94a3b8; color: #fff; }
 </style>
 </head>
 <body>
 <div class="hero">
   <h1>peek<span>md</span></h1>
   <p class="tagline">Share beautifully rendered markdown via API.</p>
+  <a class="gh-badge" href="https://github.com/notacryptodad/peekmd" target="_blank" rel="noopener"><img src="https://img.shields.io/github/stars/notacryptodad/peekmd?style=social" alt="GitHub stars"></a>
   <p class="problem">
     AI agents, bots, and scripts generate markdown — but <strong>Slack, Discord, and email mangle it</strong>.
     peekmd gives you a single API call to turn markdown into a <strong>shareable, beautifully rendered web page</strong>
@@ -477,13 +584,43 @@ pre {
   </p>
 
   <h2>One API call</h2>
-  <pre><span class="comment"># Post markdown, get a shareable link</span>
+  <div class="code-tabs">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="bash">Bash</button>
+      <button class="tab-btn" data-tab="python">Python</button>
+      <button class="tab-btn" data-tab="javascript">JavaScript</button>
+    </div>
+    <div class="tab-panel active" data-tab="bash">
+      <pre><span class="comment"># Post markdown, get a shareable link</span>
 curl -X POST ${baseUrl}/api/create \\
   -H <span class="string">"Content-Type: application/json"</span> \\
   -d '{<span class="key">"markdown"</span>: <span class="string">"# Hello\\nYour markdown here."</span>}'
 
 <span class="comment"># Response:</span>
 { <span class="key">"url"</span>: <span class="string">"${baseUrl}/abc123"</span>, <span class="key">"slug"</span>: <span class="string">"abc123"</span> }</pre>
+    </div>
+    <div class="tab-panel" data-tab="python">
+      <pre><span class="comment"># pip install requests</span>
+<span class="key">import</span> requests
+
+resp = requests.post(
+    <span class="string">"${baseUrl}/api/create"</span>,
+    json={<span class="string">"markdown"</span>: <span class="string">"# Hello\\nYour markdown here."</span>}
+)
+print(resp.json()[<span class="string">"url"</span>])
+<span class="comment"># ${baseUrl}/abc123</span></pre>
+    </div>
+    <div class="tab-panel" data-tab="javascript">
+      <pre><span class="key">const</span> resp = <span class="key">await</span> fetch(<span class="string">"${baseUrl}/api/create"</span>, {
+  method: <span class="string">"POST"</span>,
+  headers: { <span class="string">"Content-Type"</span>: <span class="string">"application/json"</span> },
+  body: JSON.stringify({ markdown: <span class="string">"# Hello\\nYour markdown here."</span> })
+});
+<span class="key">const</span> { url } = <span class="key">await</span> resp.json();
+console.log(url);
+<span class="comment">// ${baseUrl}/abc123</span></pre>
+    </div>
+  </div>
 
   <div class="cta-row">
     <button class="demo-btn" id="demo-btn">View Demo</button>
@@ -495,10 +632,8 @@ curl -X POST ${baseUrl}/api/create \\
     <p class="demo-hint">Opens in a new tab</p>
   </div>
 
-  <div class="info-group">
-    <p class="info">Free tier: 5-min TTL, no signup. <a href="${baseUrl}/api/pricing">View pricing</a> for extended TTLs.</p>
-    <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
-  </div>
+  <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="#pricing">Subscribe</a> for permanent pages &amp; no ads.</p>
+  <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
 
   <dl class="features">
     <div class="feature"><dt>Syntax highlighting</dt><dd>190+ languages</dd></div>
@@ -506,6 +641,68 @@ curl -X POST ${baseUrl}/api/create \\
     <div class="feature"><dt>Auto-expiring</dt><dd>5m to permanent</dd></div>
     <div class="feature"><dt>Burn after reading</dt><dd>One-click delete</dd></div>
   </dl>
+
+  <div class="how-it-works">
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-title">POST</div>
+        <div class="step-desc">Send markdown to the API</div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-title">URL</div>
+        <div class="step-desc">Get a shareable link back</div>
+      </div>
+      <div class="step-arrow">&rarr;</div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-title">Share</div>
+        <div class="step-desc">Anyone can view the rendered page</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pricing" id="pricing">
+    <h2>Plans</h2>
+    <div class="pricing-grid">
+      <div class="plan-card">
+        <div class="plan-name">Free</div>
+        <div class="plan-price">$0<span class="period"></span></div>
+        <ul class="plan-details">
+          <li>5-minute page TTL</li>
+          <li>Unlimited pages</li>
+          <li>Syntax highlighting</li>
+          <li>Ad banner on pages</li>
+        </ul>
+        <span class="plan-cta plan-cta-free">Current default</span>
+      </div>
+      <div class="plan-card featured">
+        <div class="plan-name">Basic</div>
+        <div class="plan-price">$5<span class="period"> /mo</span></div>
+        <ul class="plan-details">
+          <li>100 pages / month</li>
+          <li>Permanent page TTL</li>
+          <li>No ads</li>
+          <li>API key access</li>
+        </ul>
+        <a class="plan-cta plan-cta-paid" href="${baseUrl}/api/stripe/checkout?plan=basic">Get started</a>
+      </div>
+      <div class="plan-card">
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">$20<span class="period"> /mo</span></div>
+        <ul class="plan-details">
+          <li>1,000 pages / month</li>
+          <li>Permanent page TTL</li>
+          <li>No ads</li>
+          <li>API key access</li>
+        </ul>
+        <a class="plan-cta plan-cta-paid" href="${baseUrl}/api/stripe/checkout?plan=pro">Get started</a>
+      </div>
+    </div>
+  </div>
 
   <div class="use-cases">
     <h2>Built for</h2>
@@ -518,6 +715,17 @@ curl -X POST ${baseUrl}/api/create \\
   </div>
 </div>
 <script>
+// Code tabs
+document.querySelectorAll('.tab-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var tab = this.getAttribute('data-tab');
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    this.classList.add('active');
+    document.querySelector('.tab-panel[data-tab="' + tab + '"]').classList.add('active');
+  });
+});
+
 document.getElementById('demo-btn').addEventListener('click', function() {
   var btn = this;
   btn.disabled = true;
