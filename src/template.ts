@@ -466,7 +466,7 @@ pre {
 .feature dt { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
 .feature dd { color: #94a3b8; font-size: 0.85em; }
 .demo-btn {
-  display: inline-block; margin-top: 2em; padding: 12px 28px;
+  display: inline-block; padding: 12px 28px;
   background: #60a5fa; color: #1a1a2e; font-weight: 600; font-size: 1em;
   border: none; border-radius: 8px; cursor: pointer; transition: background 0.15s;
   text-decoration: none;
@@ -632,8 +632,10 @@ console.log(url);
     <p class="demo-hint">Opens in a new tab</p>
   </div>
 
-  <p class="info" style="margin-top:1.5em">Free tier: 5-min TTL, no signup. <a href="#pricing">Subscribe</a> for permanent pages &amp; no ads.</p>
-  <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
+  <div style="margin-top:1.5em">
+    <p class="info">Free tier: 5-min TTL, no signup. <a href="#pricing">Subscribe</a> for permanent pages &amp; no ads.</p>
+    <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
+  </div>
 
   <dl class="features">
     <div class="feature"><dt>Syntax highlighting</dt><dd>190+ languages</dd></div>
