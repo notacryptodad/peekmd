@@ -72,8 +72,8 @@ Health check. Returns `{ "status": "ok" }`.
 | Tier   | Max TTL     | Ad Banner | Auth                          | Price              |
 |--------|-------------|-----------|-------------------------------|--------------------|
 | free   | 5 min       | yes       | none                          | free               |
-| stripe | unlimited   | no        | `Authorization: Bearer sk_...`| $0.001-$0.01/page  |
-| x402   | unlimited   | no        | `X-PAYMENT` header            | 0.01 USDC/page     |
+| stripe | unlimited   | no        | `Authorization: Bearer sk_...`| $0.001-$0.01/page (coming soon) |
+| x402   | unlimited   | no        | `X-PAYMENT` header            | 0.01 USDC/page (coming soon)    |
 
 ### Stripe (metered billing)
 
