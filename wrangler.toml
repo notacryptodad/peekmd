@@ -4,10 +4,11 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Custom domain: peekmd.dev
-# Route configuration requires zone-level API token permissions.
-# Either update the CLOUDFLARE_API_TOKEN to include zone:peekmd.dev permissions,
-# or set up the Worker Route manually in the Cloudflare dashboard:
-#   Workers Routes > Add Route > peekmd.dev/* → peekmd worker
+# Workers Route configured via Cloudflare API (zone bd0001bd...):
+#   pattern = "peekmd.dev/*" → script = "peekmd"
+# The API token lacks Workers Scripts:Edit permission, so wrangler deploy
+# cannot manage routes directly. Route was created via zone-level API.
+# To redeploy the worker code, update the API token permissions first.
 # routes = [
 #   { pattern = "peekmd.dev/*", zone_name = "peekmd.dev" },
 # ]
