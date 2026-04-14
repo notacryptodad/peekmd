@@ -681,7 +681,7 @@ console.log(url);
         </ul>
         <span class="plan-cta plan-cta-free">Current default</span>
       </div>
-      <div class="plan-card featured">
+      <div class="plan-card" style="opacity:0.5;pointer-events:none">
         <div class="plan-name">Basic</div>
         <div class="plan-price">$5<span class="period"> /mo</span></div>
         <ul class="plan-details">
@@ -690,9 +690,9 @@ console.log(url);
           <li>No ads</li>
           <li>API key access</li>
         </ul>
-        <a class="plan-cta plan-cta-paid" href="${baseUrl}/api/stripe/checkout?plan=basic">Get started</a>
+        <span class="plan-cta plan-cta-free">Coming soon</span>
       </div>
-      <div class="plan-card">
+      <div class="plan-card" style="opacity:0.5;pointer-events:none">
         <div class="plan-name">Pro</div>
         <div class="plan-price">$20<span class="period"> /mo</span></div>
         <ul class="plan-details">
@@ -701,7 +701,7 @@ console.log(url);
           <li>No ads</li>
           <li>API key access</li>
         </ul>
-        <a class="plan-cta plan-cta-paid" href="${baseUrl}/api/stripe/checkout?plan=pro">Get started</a>
+        <span class="plan-cta plan-cta-free">Coming soon</span>
       </div>
     </div>
   </div>
