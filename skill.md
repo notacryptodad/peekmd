@@ -97,7 +97,13 @@ Health check. Returns `{ "status": "ok" }`.
 - **Burn after reading**: call `/api/burn/:slug` to delete a page after the recipient has viewed it.
 - **Base URL**: `https://peekmd.dev`
 
-## Source
+## Privacy & Data Handling
 
-Homepage: [peekmd.dev](https://peekmd.dev)
+- **No account required** for free tier. No cookies, no tracking, no PII collected.
+- **Temporary storage only**: free-tier pages auto-expire after 5 minutes. Data is stored in Cloudflare KV with TTL enforcement — expired pages are automatically purged.
+- **No logging of content**: page markdown is stored only for rendering and is deleted on expiry or burn.
+- **Burn after reading**: use `/api/burn/:slug` to immediately and permanently delete a page.
+- **Paid tiers**: Stripe tier retains pages for the requested TTL only. x402 tier is stateless (pay-per-request, no account).
+- **Infrastructure**: hosted on Cloudflare Workers (edge compute) with Cloudflare KV (storage). No data leaves the Cloudflare network.
+- **Recommendation**: do not send secrets, credentials, or PII through any third-party rendering service including peekmd. Use for shareable content only.
 

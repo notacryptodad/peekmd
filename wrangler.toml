@@ -8,5 +8,9 @@ binding = "PAGES"
 id = "fcaf0070253b484d8b5349957ba5b9cf"
 preview_id = "dc1bb955f5e84ddea2925ad197ddab96"
 
+routes = [
+  { pattern = "peekmd.dev", custom_domain = true },
+]
+
 [vars]
-# BASE_URL = "https://peekmd.example.com"
+BASE_URL = "https://peekmd.dev"

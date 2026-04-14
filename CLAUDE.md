@@ -67,7 +67,7 @@ npx wrangler deploy  # Deploy to Cloudflare Workers
 
 ## Links
 
-- **Live:** https://peekmd.peekmd.workers.dev
+- **Live:** https://peekmd.dev
 - **GitHub:** https://github.com/notacryptodad/peekmd
 - **ClawHub:** https://clawhub.com/notacryptodad/peekmd
 - **License:** MIT

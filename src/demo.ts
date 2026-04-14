@@ -15,7 +15,7 @@ Beautiful markdown rendering, one link away.
 
 \`\`\`typescript
 // Post markdown, get a shareable link
-const response = await fetch("https://peekmd.peekmd.workers.dev/api/create", {
+const response = await fetch("https://peekmd.dev/api/create", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({

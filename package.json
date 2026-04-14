@@ -7,7 +7,7 @@
     "type": "git",
     "url": "https://github.com/notacryptodad/peekmd.git"
   },
-  "homepage": "https://peekmd.peekmd.workers.dev",
+  "homepage": "https://peekmd.dev",
   "type": "module",
   "bin": {
     "peekmd": "dist/cli.js"

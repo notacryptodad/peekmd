@@ -7,12 +7,12 @@ Beautiful markdown, one link away.
 
 POST markdown to the API, get back a shareable link to a beautifully rendered, auto-expiring HTML page. Built for AI agents, bots, and developers who need to share rich content without fighting chat app formatting.
 
-**Live:** [peekmd.peekmd.workers.dev](https://peekmd.peekmd.workers.dev)
+**Live:** [peekmd.dev](https://peekmd.dev)
 
 ## Quick Start
 
 ```bash
-curl -X POST https://peekmd.peekmd.workers.dev/api/create \
+curl -X POST https://peekmd.dev/api/create \
   -H "Content-Type: application/json" \
   -d '{"markdown": "# Hello World\n\nThis is a **peekmd** page."}'
 ```
@@ -21,7 +21,7 @@ Response:
 
 ```json
 {
-  "url": "https://peekmd.peekmd.workers.dev/aBcDeFgH",
+  "url": "https://peekmd.dev/aBcDeFgH",
   "slug": "aBcDeFgH",
   "expiresAt": "2026-03-22T04:30:00.000Z",
   "tier": "free"
@@ -137,5 +137,5 @@ npm run build        # compile TypeScript
 ## Links
 
 - [ClawHub](https://clawhub.com/notacryptodad/peekmd)
-- [Live Demo](https://peekmd.peekmd.workers.dev)
+- [Live Demo](https://peekmd.dev)
 - [GitHub](https://github.com/notacryptodad/peekmd)
