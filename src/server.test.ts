@@ -222,7 +222,7 @@ describe('peekmd API', () => {
       });
       const { slug } = JSON.parse(createRes.body);
       const res = await server.inject({ method: 'GET', url: `/${slug}` });
-      expect(res.body).toContain('Upgrade to remove ads');
+      expect(res.body).toContain('Upgrade for longer TTLs and no banner');
     });
 
     it('hides ad banner for stripe tier pages', async () => {
