@@ -94,12 +94,12 @@ export interface SubscriptionPlanConfig {
 export const SUBSCRIPTION_PLANS: Record<SubscriptionPlan, SubscriptionPlanConfig> = {
   basic: {
     name: 'Basic',
-    pagesPerMonth: 100,
+    pagesPerMonth: 500,
     priceIdEnvVar: 'STRIPE_BASIC_PRICE_ID',
   },
   pro: {
     name: 'Pro',
-    pagesPerMonth: 1000,
+    pagesPerMonth: 5000,
     priceIdEnvVar: 'STRIPE_PRO_PRICE_ID',
   },
 };
@@ -116,6 +116,6 @@ export function stripePriceCents(ttlSec: number): number {
   return 1.0; // $0.01
 }
 
-/** x402 price in USDC atomic units (6 decimals). 0.01 USDC = 10000. */
-export const X402_PRICE_USDC = '10000';
-export const X402_PRICE_DISPLAY = '0.01';
+/** x402 price in USDC atomic units (6 decimals). 0.02 USDC = 20000. */
+export const X402_PRICE_USDC = '20000';
+export const X402_PRICE_DISPLAY = '0.02';

@@ -376,8 +376,8 @@ describe('peekmd API', () => {
 
     it('returns 402 when quota exceeded', async () => {
       const { server, stripe } = quotaApp('basic');
-      // Exhaust the quota (basic = 100 pages)
-      for (let i = 0; i < 100; i++) {
+      // Exhaust the quota (basic = 500 pages)
+      for (let i = 0; i < 500; i++) {
         await stripe.recordUsage('cus_quota');
       }
       const res = await server.inject({
@@ -389,8 +389,8 @@ describe('peekmd API', () => {
       expect(res.statusCode).toBe(402);
       const body = JSON.parse(res.body);
       expect(body.error).toBe('quota_exceeded');
-      expect(body.pagesUsed).toBe(100);
-      expect(body.quotaLimit).toBe(100);
+      expect(body.pagesUsed).toBe(500);
+      expect(body.quotaLimit).toBe(500);
       expect(body.remaining).toBe(0);
       expect(body.upgrade).toBeDefined();
       expect(body.upgrade.checkoutUrl).toContain('/api/stripe/checkout');
@@ -402,7 +402,7 @@ describe('peekmd API', () => {
       for (let i = 0; i < 100; i++) {
         await stripe.recordUsage('cus_quota');
       }
-      // Pro plan (1000 pages) should still allow
+      // Pro plan (5000 pages) should still allow
       const res = await server.inject({
         method: 'POST',
         url: '/api/create',
@@ -434,8 +434,8 @@ describe('peekmd API', () => {
       const body = JSON.parse(res.body);
       expect(body.plan).toBe('basic');
       expect(body.pagesUsed).toBe(3);
-      expect(body.quotaLimit).toBe(100);
-      expect(body.remaining).toBe(97);
+      expect(body.quotaLimit).toBe(500);
+      expect(body.remaining).toBe(497);
     });
 
     it('checkout with plan stores plan for quota tracking', async () => {
@@ -465,7 +465,7 @@ describe('peekmd API', () => {
       });
       const status = JSON.parse(statusRes.body);
       expect(status.plan).toBe('pro');
-      expect(status.quotaLimit).toBe(1000);
+      expect(status.quotaLimit).toBe(5000);
     });
   });
 
@@ -669,7 +669,7 @@ describe('peekmd API', () => {
       expect(body.free.maxTtlSeconds).toBe(300);
       expect(body.free.adBanner).toBe(true);
       expect(body.stripe.adBanner).toBe(false);
-      expect(body.x402.pricePerPage).toBe('0.01 USDC');
+      expect(body.x402.pricePerPage).toBe('0.02 USDC');
     });
 
     it('includes subscription plans in stripe pricing', async () => {
@@ -680,10 +680,10 @@ describe('peekmd API', () => {
       expect(body.stripe.plans).toHaveLength(2);
       expect(body.stripe.plans[0].plan).toBe('basic');
       expect(body.stripe.plans[0].name).toBe('Basic');
-      expect(body.stripe.plans[0].pagesPerMonth).toBe(100);
+      expect(body.stripe.plans[0].pagesPerMonth).toBe(500);
       expect(body.stripe.plans[1].plan).toBe('pro');
       expect(body.stripe.plans[1].name).toBe('Pro');
-      expect(body.stripe.plans[1].pagesPerMonth).toBe(1000);
+      expect(body.stripe.plans[1].pagesPerMonth).toBe(5000);
     });
   });
 
@@ -907,8 +907,8 @@ describe('peekmd API', () => {
       const stripe = new MockStripeService(keyStore);
       const server = app({ stripe });
 
-      // Exhaust basic quota (100 pages)
-      for (let i = 0; i < 100; i++) {
+      // Exhaust basic quota (500 pages)
+      for (let i = 0; i < 500; i++) {
         await stripe.recordUsage('cus_upgrade');
       }
 
@@ -933,7 +933,7 @@ describe('peekmd API', () => {
         body: payload,
       });
 
-      // Should now be allowed on pro (1000 page quota)
+      // Should now be allowed on pro (5000 page quota)
       const allowedRes = await server.inject({
         method: 'POST',
         url: '/api/create',

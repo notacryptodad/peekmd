@@ -633,7 +633,7 @@ console.log(url);
   </div>
 
   <div style="margin-top:1.5em">
-    <p class="info">Free tier: 5-min TTL, no signup. <a href="#pricing">Subscribe</a> for permanent pages &amp; no ads.</p>
+    <p class="info">Free tier: 5-min TTL, no signup. <a href="#pricing">Subscribe</a> from $9/mo for longer TTL &amp; no ads.</p>
     <p class="info" style="margin-top:0.5em"><a href="https://clawhub.ai/notacryptodad/peekmd">Available on ClawHub</a> &mdash; <code style="background:#11111b;padding:4px 8px;border-radius:4px;font-size:0.85em;">clawhub install peekmd</code></p>
   </div>
 
@@ -683,10 +683,10 @@ console.log(url);
       </div>
       <div class="plan-card" style="opacity:0.5;pointer-events:none">
         <div class="plan-name">Basic</div>
-        <div class="plan-price">$5<span class="period"> /mo</span></div>
+        <div class="plan-price">$9<span class="period"> /mo</span></div>
         <ul class="plan-details">
-          <li>100 pages / month</li>
-          <li>Permanent page TTL</li>
+          <li>500 pages / month</li>
+          <li>30-day page TTL</li>
           <li>No ads</li>
           <li>API key access</li>
         </ul>
@@ -694,9 +694,9 @@ console.log(url);
       </div>
       <div class="plan-card" style="opacity:0.5;pointer-events:none">
         <div class="plan-name">Pro</div>
-        <div class="plan-price">$20<span class="period"> /mo</span></div>
+        <div class="plan-price">$29<span class="period"> /mo</span></div>
         <ul class="plan-details">
-          <li>1,000 pages / month</li>
+          <li>5,000 pages / month</li>
           <li>Permanent page TTL</li>
           <li>No ads</li>
           <li>API key access</li>

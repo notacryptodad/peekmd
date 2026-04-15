@@ -112,15 +112,15 @@ describe('TIER_CONFIGS', () => {
 });
 
 describe('SUBSCRIPTION_PLANS', () => {
-  it('defines basic plan with 100 pages/mo', () => {
+  it('defines basic plan with 500 pages/mo', () => {
     expect(SUBSCRIPTION_PLANS.basic.name).toBe('Basic');
-    expect(SUBSCRIPTION_PLANS.basic.pagesPerMonth).toBe(100);
+    expect(SUBSCRIPTION_PLANS.basic.pagesPerMonth).toBe(500);
     expect(SUBSCRIPTION_PLANS.basic.priceIdEnvVar).toBe('STRIPE_BASIC_PRICE_ID');
   });
 
-  it('defines pro plan with 1000 pages/mo', () => {
+  it('defines pro plan with 5000 pages/mo', () => {
     expect(SUBSCRIPTION_PLANS.pro.name).toBe('Pro');
-    expect(SUBSCRIPTION_PLANS.pro.pagesPerMonth).toBe(1000);
+    expect(SUBSCRIPTION_PLANS.pro.pagesPerMonth).toBe(5000);
     expect(SUBSCRIPTION_PLANS.pro.priceIdEnvVar).toBe('STRIPE_PRO_PRICE_ID');
   });
 });
