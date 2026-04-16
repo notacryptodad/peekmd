@@ -55,18 +55,44 @@ describe('validateTierTtl', () => {
   });
 
   it('allows extended TTL for paid tiers', () => {
-    expect(validateTierTtl(3600, 'stripe')).toEqual({ ok: true, ttlSec: 3600 });
+    expect(validateTierTtl(3600, 'stripe', 'pro')).toEqual({ ok: true, ttlSec: 3600 });
     expect(validateTierTtl(86400, 'x402')).toEqual({ ok: true, ttlSec: 86400 });
-    expect(validateTierTtl(604800, 'stripe')).toEqual({ ok: true, ttlSec: 604800 });
+    expect(validateTierTtl(604800, 'stripe', 'pro')).toEqual({ ok: true, ttlSec: 604800 });
   });
 
-  it('allows permanent (ttl=0) for paid tiers', () => {
-    expect(validateTierTtl(0, 'stripe')).toEqual({ ok: true, ttlSec: 0 });
+  it('allows permanent (ttl=0) for pro plan and x402', () => {
+    expect(validateTierTtl(0, 'stripe', 'pro')).toEqual({ ok: true, ttlSec: 0 });
     expect(validateTierTtl(0, 'x402')).toEqual({ ok: true, ttlSec: 0 });
   });
 
   it('requires payment for permanent on free tier', () => {
     expect(validateTierTtl(0, 'free')).toEqual({ ok: false, reason: 'payment_required' });
+  });
+
+  // ─── Plan-aware TTL validation ──────────────────────────────
+
+  it('caps basic plan at 30 days (2592000s)', () => {
+    expect(validateTierTtl(2_592_000, 'stripe', 'basic')).toEqual({ ok: true, ttlSec: 2_592_000 });
+    expect(validateTierTtl(2_592_001, 'stripe', 'basic')).toEqual({ ok: false, reason: 'plan_limit' });
+  });
+
+  it('rejects permanent (ttl=0) for basic plan', () => {
+    expect(validateTierTtl(0, 'stripe', 'basic')).toEqual({ ok: false, reason: 'plan_limit' });
+  });
+
+  it('allows TTL within basic plan limit', () => {
+    expect(validateTierTtl(86400, 'stripe', 'basic')).toEqual({ ok: true, ttlSec: 86400 });
+    expect(validateTierTtl(604800, 'stripe', 'basic')).toEqual({ ok: true, ttlSec: 604800 });
+  });
+
+  it('allows unlimited TTL for pro plan', () => {
+    expect(validateTierTtl(2_592_001, 'stripe', 'pro')).toEqual({ ok: true, ttlSec: 2_592_001 });
+    expect(validateTierTtl(31_536_000, 'stripe', 'pro')).toEqual({ ok: true, ttlSec: 31_536_000 });
+  });
+
+  it('defaults to basic plan limits when no plan specified for stripe', () => {
+    expect(validateTierTtl(2_592_001, 'stripe')).toEqual({ ok: false, reason: 'plan_limit' });
+    expect(validateTierTtl(0, 'stripe')).toEqual({ ok: false, reason: 'plan_limit' });
   });
 
   it('rejects invalid TTL values', () => {
@@ -112,16 +138,18 @@ describe('TIER_CONFIGS', () => {
 });
 
 describe('SUBSCRIPTION_PLANS', () => {
-  it('defines basic plan with 500 pages/mo', () => {
+  it('defines basic plan with 500 pages/mo and 30-day TTL cap', () => {
     expect(SUBSCRIPTION_PLANS.basic.name).toBe('Basic');
     expect(SUBSCRIPTION_PLANS.basic.pagesPerMonth).toBe(500);
     expect(SUBSCRIPTION_PLANS.basic.priceIdEnvVar).toBe('STRIPE_BASIC_PRICE_ID');
+    expect(SUBSCRIPTION_PLANS.basic.maxTtlSec).toBe(2_592_000);
   });
 
-  it('defines pro plan with 5000 pages/mo', () => {
+  it('defines pro plan with 5000 pages/mo and unlimited TTL', () => {
     expect(SUBSCRIPTION_PLANS.pro.name).toBe('Pro');
     expect(SUBSCRIPTION_PLANS.pro.pagesPerMonth).toBe(5000);
     expect(SUBSCRIPTION_PLANS.pro.priceIdEnvVar).toBe('STRIPE_PRO_PRICE_ID');
+    expect(SUBSCRIPTION_PLANS.pro.maxTtlSec).toBe(0);
   });
 });
 

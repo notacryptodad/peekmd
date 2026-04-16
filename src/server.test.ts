@@ -15,9 +15,9 @@ function app(opts?: { stripe?: MockStripeService; x402?: object }) {
   });
 }
 
-function stripeApp() {
+function stripeApp(plan: 'basic' | 'pro' = 'pro') {
   const keyStore = new InMemoryApiKeyStore();
-  keyStore.add('sk_test_valid', 'cus_test123');
+  keyStore.add('sk_test_valid', 'cus_test123', plan);
   const stripe = new MockStripeService(keyStore);
   return { server: app({ stripe }), stripe };
 }
@@ -189,6 +189,89 @@ describe('peekmd API', () => {
       });
       expect(res.statusCode).toBe(401);
       expect(JSON.parse(res.body).error).toContain('Invalid');
+    });
+  });
+
+  // ─── POST /api/create (Basic plan TTL enforcement) ──────────
+
+  describe('POST /api/create (basic plan TTL cap)', () => {
+    it('allows TTL within 30-day cap for basic plan', async () => {
+      const { server } = stripeApp('basic');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Basic page', ttl: 86400 },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(JSON.parse(res.body).tier).toBe('stripe');
+    });
+
+    it('allows TTL at exactly 30 days for basic plan', async () => {
+      const { server } = stripeApp('basic');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Max basic', ttl: 2_592_000 },
+      });
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('returns 402 plan_limit for TTL exceeding 30 days on basic plan', async () => {
+      const { server } = stripeApp('basic');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Too long', ttl: 2_592_001 },
+      });
+      expect(res.statusCode).toBe(402);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('plan_limit');
+      expect(body.message).toContain('Basic');
+      expect(body.message).toContain('30 days');
+      expect(body.maxTtlSeconds).toBe(2_592_000);
+      expect(body.upgrade).toBeDefined();
+      expect(body.upgrade.checkoutUrl).toContain('/api/stripe/checkout');
+    });
+
+    it('returns 402 plan_limit for permanent page on basic plan', async () => {
+      const { server } = stripeApp('basic');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Permanent', ttl: 0 },
+      });
+      expect(res.statusCode).toBe(402);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('plan_limit');
+      expect(body.upgrade).toBeDefined();
+    });
+
+    it('pro plan allows permanent pages', async () => {
+      const { server } = stripeApp('pro');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Permanent pro', ttl: 0 },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.expiresAt).toBeNull();
+    });
+
+    it('pro plan allows TTL beyond 30 days', async () => {
+      const { server } = stripeApp('pro');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Long pro', ttl: 5_000_000 },
+      });
+      expect(res.statusCode).toBe(201);
     });
   });
 

@@ -55,6 +55,7 @@ export interface WebhookResult {
 
 export interface StripeService {
   validateApiKey(key: string): Promise<ApiKeyRecord | undefined>;
+  getSubscriberPlan(customerId: string): Promise<SubscriptionPlan | undefined>;
   recordUsage(customerId: string, pages?: number): Promise<void>;
   checkQuota(customerId: string): Promise<QuotaCheck>;
   getBillingStatus(customerId: string): Promise<BillingStatus>;
@@ -161,6 +162,10 @@ export class StripeClient implements StripeService {
 
   async validateApiKey(key: string): Promise<ApiKeyRecord | undefined> {
     return this.keyStore.validate(key);
+  }
+
+  async getSubscriberPlan(customerId: string): Promise<SubscriptionPlan | undefined> {
+    return this.keyStore.getPlan(customerId);
   }
 
   async recordUsage(customerId: string, pages = 1): Promise<void> {
@@ -315,6 +320,10 @@ export class MockStripeService implements StripeService {
 
   async validateApiKey(key: string): Promise<ApiKeyRecord | undefined> {
     return this.keyStore.validate(key);
+  }
+
+  async getSubscriberPlan(customerId: string): Promise<SubscriptionPlan | undefined> {
+    return this.keyStore.getPlan(customerId);
   }
 
   private periodKey(customerId: string): string {

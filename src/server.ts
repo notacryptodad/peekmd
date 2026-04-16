@@ -7,6 +7,7 @@ import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 import type { SubscriptionPlan } from './tiers.js';
+import type { ApiKeyRecord } from './stripe.js';
 import type { StripeService } from './stripe.js';
 import { MockStripeService, InMemoryApiKeyStore, StripeClient } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
@@ -126,8 +127,22 @@ export function buildApp(opts?: AppOptions) {
     const paymentHeader = (request.headers['x-payment'] as string) ?? null;
     const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
 
-    // Validate TTL for detected tier
-    const ttlResult = validateTierTtl(ttl, tier);
+    // For stripe: validate API key first (needed for plan-aware TTL check)
+    let stripeKeyRecord: ApiKeyRecord | undefined;
+    let subscriberPlan: SubscriptionPlan | undefined;
+    if (tier === 'stripe') {
+      if (!apiKey) {
+        return reply.status(401).send({ error: 'Missing API key' });
+      }
+      stripeKeyRecord = await stripe.validateApiKey(apiKey);
+      if (!stripeKeyRecord) {
+        return reply.status(401).send({ error: 'Invalid API key' });
+      }
+      subscriberPlan = await stripe.getSubscriberPlan(stripeKeyRecord.stripeCustomerId) ?? 'basic';
+    }
+
+    // Validate TTL for detected tier (plan-aware for Stripe subscribers)
+    const ttlResult = validateTierTtl(ttl, tier, subscriberPlan);
     if (!ttlResult.ok) {
       if (ttlResult.reason === 'payment_required') {
         const body = paymentRequiredResponse(baseUrl, x402Config);
@@ -140,20 +155,27 @@ export function buildApp(opts?: AppOptions) {
         for (const [k, v] of Object.entries(headers)) reply.header(k, v);
         return reply.send(body);
       }
+      if (ttlResult.reason === 'plan_limit') {
+        const planName = SUBSCRIPTION_PLANS[subscriberPlan ?? 'basic'].name;
+        const maxSec = SUBSCRIPTION_PLANS[subscriberPlan ?? 'basic'].maxTtlSec;
+        return reply.status(402).send({
+          error: 'plan_limit',
+          message: `Your ${planName} plan allows a maximum TTL of ${maxSec} seconds (${Math.floor(maxSec / 86400)} days). Upgrade to Pro for permanent pages.`,
+          maxTtlSeconds: maxSec,
+          upgrade: {
+            description: 'Upgrade to Pro for unlimited TTL and permanent pages.',
+            checkoutUrl: `${baseUrl}/api/stripe/checkout`,
+            portalUrl: `${baseUrl}/api/stripe/portal`,
+          },
+        });
+      }
       return reply.status(400).send({ error: 'ttl must be a finite number >= 0' });
     }
     const ttlSec = ttlResult.ttlSec;
 
-    // Stripe tier: validate API key, check quota, and record usage
+    // Stripe tier: check quota and record usage (key already validated above)
     if (tier === 'stripe') {
-      if (!apiKey) {
-        return reply.status(401).send({ error: 'Missing API key' });
-      }
-      const keyRecord = await stripe.validateApiKey(apiKey);
-      if (!keyRecord) {
-        return reply.status(401).send({ error: 'Invalid API key' });
-      }
-      const quota = await stripe.checkQuota(keyRecord.stripeCustomerId);
+      const quota = await stripe.checkQuota(stripeKeyRecord!.stripeCustomerId);
       if (!quota.allowed) {
         return reply.status(402).send({
           error: 'quota_exceeded',
@@ -168,7 +190,7 @@ export function buildApp(opts?: AppOptions) {
           },
         });
       }
-      stripe.recordUsage(keyRecord.stripeCustomerId).catch(() => {});
+      stripe.recordUsage(stripeKeyRecord!.stripeCustomerId).catch(() => {});
     }
 
     // x402 tier: verify payment receipt

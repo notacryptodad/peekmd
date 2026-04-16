@@ -43,13 +43,17 @@ export function detectTier(
 
 /**
  * Validate TTL for a given tier.
- * Returns validated TTL in seconds, or signals that payment is needed.
- * TTL = 0 means permanent (only available for paid tiers).
+ * Returns validated TTL in seconds, or signals that payment/upgrade is needed.
+ * TTL = 0 means permanent (only available for paid tiers with sufficient plan).
+ *
+ * For Stripe subscribers, pass the subscription plan to enforce plan-specific
+ * TTL caps (e.g. Basic = 30 days, Pro = permanent).
  */
 export function validateTierTtl(
   ttl: number | undefined,
   tier: Tier,
-): { ok: true; ttlSec: number } | { ok: false; reason: 'payment_required' | 'invalid' } {
+  plan?: SubscriptionPlan,
+): { ok: true; ttlSec: number } | { ok: false; reason: 'payment_required' | 'plan_limit' | 'invalid' } {
   const config = TIER_CONFIGS[tier];
 
   // No TTL specified → use tier default
@@ -62,10 +66,17 @@ export function validateTierTtl(
     return { ok: false, reason: 'invalid' };
   }
 
+  // Resolve effective max TTL: plan-specific for stripe, otherwise tier config
+  let maxTtlSec = config.maxTtlSec;
+  if (tier === 'stripe') {
+    const resolvedPlan = plan ?? 'basic';
+    maxTtlSec = SUBSCRIPTION_PLANS[resolvedPlan].maxTtlSec;
+  }
+
   // Permanent page (ttl = 0)
   if (ttl === 0) {
-    if (config.maxTtlSec === 0) return { ok: true, ttlSec: 0 };
-    return { ok: false, reason: 'payment_required' };
+    if (maxTtlSec === 0) return { ok: true, ttlSec: 0 };
+    return { ok: false, reason: tier === 'free' ? 'payment_required' : 'plan_limit' };
   }
 
   const ttlSec = Math.floor(ttl);
@@ -73,9 +84,9 @@ export function validateTierTtl(
     return { ok: false, reason: 'invalid' };
   }
 
-  // Tier limit check (maxTtlSec = 0 means unlimited)
-  if (config.maxTtlSec > 0 && ttlSec > config.maxTtlSec) {
-    return { ok: false, reason: 'payment_required' };
+  // Tier/plan limit check (maxTtlSec = 0 means unlimited)
+  if (maxTtlSec > 0 && ttlSec > maxTtlSec) {
+    return { ok: false, reason: tier === 'free' ? 'payment_required' : 'plan_limit' };
   }
 
   return { ok: true, ttlSec };
@@ -89,6 +100,7 @@ export interface SubscriptionPlanConfig {
   name: string;
   pagesPerMonth: number;
   priceIdEnvVar: string;
+  maxTtlSec: number; // 0 = unlimited (permanent pages allowed)
 }
 
 export const SUBSCRIPTION_PLANS: Record<SubscriptionPlan, SubscriptionPlanConfig> = {
@@ -96,11 +108,13 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionPlan, SubscriptionPlanConfig
     name: 'Basic',
     pagesPerMonth: 500,
     priceIdEnvVar: 'STRIPE_BASIC_PRICE_ID',
+    maxTtlSec: 2_592_000, // 30 days
   },
   pro: {
     name: 'Pro',
     pagesPerMonth: 5000,
     priceIdEnvVar: 'STRIPE_PRO_PRICE_ID',
+    maxTtlSec: 0, // unlimited (permanent)
   },
 };
 
