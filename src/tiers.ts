@@ -99,6 +99,7 @@ export type SubscriptionPlan = 'basic' | 'pro';
 export interface SubscriptionPlanConfig {
   name: string;
   pagesPerMonth: number;
+  pricePerMonthCents: number;
   priceIdEnvVar: string;
   maxTtlSec: number; // 0 = unlimited (permanent pages allowed)
 }
@@ -107,12 +108,14 @@ export const SUBSCRIPTION_PLANS: Record<SubscriptionPlan, SubscriptionPlanConfig
   basic: {
     name: 'Basic',
     pagesPerMonth: 500,
+    pricePerMonthCents: 900,
     priceIdEnvVar: 'STRIPE_BASIC_PRICE_ID',
     maxTtlSec: 2_592_000, // 30 days
   },
   pro: {
     name: 'Pro',
     pagesPerMonth: 5000,
+    pricePerMonthCents: 2900,
     priceIdEnvVar: 'STRIPE_PRO_PRICE_ID',
     maxTtlSec: 0, // unlimited (permanent)
   },

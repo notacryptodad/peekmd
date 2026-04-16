@@ -765,9 +765,11 @@ describe('peekmd API', () => {
       expect(body.stripe.plans[0].plan).toBe('basic');
       expect(body.stripe.plans[0].name).toBe('Basic');
       expect(body.stripe.plans[0].pagesPerMonth).toBe(500);
+      expect(body.stripe.plans[0].pricePerMonthCents).toBe(900);
       expect(body.stripe.plans[1].plan).toBe('pro');
       expect(body.stripe.plans[1].name).toBe('Pro');
       expect(body.stripe.plans[1].pagesPerMonth).toBe(5000);
+      expect(body.stripe.plans[1].pricePerMonthCents).toBe(2900);
     });
   });
 

@@ -388,6 +388,7 @@ export function buildApp(opts?: AppOptions) {
       plan: key,
       name: config.name,
       pagesPerMonth: config.pagesPerMonth,
+      pricePerMonthCents: config.pricePerMonthCents,
       checkoutUrl: `${baseUrl}/api/stripe/checkout`,
     }));
     return reply.send({

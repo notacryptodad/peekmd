@@ -267,6 +267,7 @@ function handlePricing(baseUrl: string, x402Config: Partial<X402Config>): Respon
     plan: key,
     name: config.name,
     pagesPerMonth: config.pagesPerMonth,
+    pricePerMonthCents: config.pricePerMonthCents,
     checkoutUrl: `${baseUrl}/api/stripe/checkout`,
   }));
   return json({

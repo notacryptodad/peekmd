@@ -141,6 +141,7 @@ describe('SUBSCRIPTION_PLANS', () => {
   it('defines basic plan with 500 pages/mo and 30-day TTL cap', () => {
     expect(SUBSCRIPTION_PLANS.basic.name).toBe('Basic');
     expect(SUBSCRIPTION_PLANS.basic.pagesPerMonth).toBe(500);
+    expect(SUBSCRIPTION_PLANS.basic.pricePerMonthCents).toBe(900);
     expect(SUBSCRIPTION_PLANS.basic.priceIdEnvVar).toBe('STRIPE_BASIC_PRICE_ID');
     expect(SUBSCRIPTION_PLANS.basic.maxTtlSec).toBe(2_592_000);
   });
@@ -148,6 +149,7 @@ describe('SUBSCRIPTION_PLANS', () => {
   it('defines pro plan with 5000 pages/mo and unlimited TTL', () => {
     expect(SUBSCRIPTION_PLANS.pro.name).toBe('Pro');
     expect(SUBSCRIPTION_PLANS.pro.pagesPerMonth).toBe(5000);
+    expect(SUBSCRIPTION_PLANS.pro.pricePerMonthCents).toBe(2900);
     expect(SUBSCRIPTION_PLANS.pro.priceIdEnvVar).toBe('STRIPE_PRO_PRICE_ID');
     expect(SUBSCRIPTION_PLANS.pro.maxTtlSec).toBe(0);
   });
