@@ -14,6 +14,8 @@ import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js
 import type { X402Config } from './x402.js';
 import { DEMO_MARKDOWN } from './demo.js';
 import { ogImageSvg } from './og-image.js';
+import { MemoryRateLimiter, rateLimitResponse } from './rate-limit.js';
+import type { RateLimiter } from './rate-limit.js';
 
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
@@ -25,6 +27,7 @@ export interface AppOptions {
   store?: PageStore;
   stripe?: StripeService;
   x402?: Partial<X402Config>;
+  rateLimiter?: RateLimiter;
 }
 
 /**
@@ -78,6 +81,7 @@ export function buildApp(opts?: AppOptions) {
   const store = opts?.store ?? new MemoryStore();
   const stripe = opts?.stripe ?? new MockStripeService();
   const x402Config = opts?.x402 ?? {};
+  const rateLimiter = opts?.rateLimiter ?? new MemoryRateLimiter();
 
   const app = Fastify({ logger: false });
 
@@ -126,6 +130,15 @@ export function buildApp(opts?: AppOptions) {
     const authorization = request.headers.authorization ?? null;
     const paymentHeader = (request.headers['x-payment'] as string) ?? null;
     const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
+
+    // Free-tier rate limiting: 20 pages/day per IP
+    if (tier === 'free') {
+      const ip = request.ip;
+      const rl = await rateLimiter.consume(ip);
+      if (!rl.allowed) {
+        return reply.status(429).send(rateLimitResponse(rl, baseUrl));
+      }
+    }
 
     // For stripe: validate API key first (needed for plan-aware TTL check)
     let stripeKeyRecord: ApiKeyRecord | undefined;

@@ -18,6 +18,7 @@ import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js
 import type { X402Config } from './x402.js';
 import { DEMO_MARKDOWN } from './demo.js';
 import { ogImageSvg } from './og-image.js';
+import { KVRateLimiter, rateLimitResponse } from './rate-limit.js';
 
 const MAX_MARKDOWN_BYTES = 512_000;
 const SLUG_LENGTH = 8;
@@ -120,6 +121,7 @@ async function handleCreate(
   baseUrl: string,
   stripe: StripeService,
   x402Config: Partial<X402Config>,
+  rateLimiter: KVRateLimiter,
 ): Promise<Response> {
   let body: { markdown?: string; ttl?: number };
   try {
@@ -140,6 +142,15 @@ async function handleCreate(
   const authorization = request.headers.get('authorization');
   const paymentHeader = request.headers.get('x-payment');
   const { tier, apiKey, paymentHeader: receipt } = detectTier(authorization, paymentHeader);
+
+  // Free-tier rate limiting: 20 pages/day per IP
+  if (tier === 'free') {
+    const ip = request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '0.0.0.0';
+    const rl = await rateLimiter.consume(ip);
+    if (!rl.allowed) {
+      return json(rateLimitResponse(rl, baseUrl), 429);
+    }
+  }
 
   // For stripe: validate API key first (needed for plan-aware TTL check)
   let stripeKeyRecord: ApiKeyRecord | undefined;
@@ -318,7 +329,8 @@ export default {
     }
 
     if (url.pathname === '/api/create' && request.method === 'POST') {
-      return handleCreate(request, store, baseUrl, stripe, x402Config);
+      const rateLimiter = new KVRateLimiter(env.PAGES);
+      return handleCreate(request, store, baseUrl, stripe, x402Config, rateLimiter);
     }
 
     if (url.pathname === '/api/demo' && request.method === 'POST') {

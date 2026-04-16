@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildApp } from './server.js';
 import { MemoryStore } from './memory-store.js';
 import { MockStripeService, InMemoryApiKeyStore } from './stripe.js';
+import { MemoryRateLimiter } from './rate-limit.js';
 
 const BASE_URL = 'http://localhost:3000';
 
@@ -1024,6 +1025,101 @@ describe('peekmd API', () => {
         payload: { markdown: '# Now on pro plan' },
       });
       expect(allowedRes.statusCode).toBe(201);
+    });
+  });
+
+  // ─── Free-tier Rate Limiting ────────────────────────────────
+
+  describe('Free-tier rate limiting', () => {
+    function rateLimitedApp(limit: number) {
+      const memStore = new MemoryStore();
+      const rateLimiter = new MemoryRateLimiter(limit);
+      return buildApp({
+        baseUrl: BASE_URL,
+        store: memStore,
+        rateLimiter,
+      });
+    }
+
+    it('allows free-tier requests within daily limit', async () => {
+      const server = rateLimitedApp(3);
+      for (let i = 0; i < 3; i++) {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/api/create',
+          payload: { markdown: `# Page ${i}` },
+        });
+        expect(res.statusCode).toBe(201);
+      }
+    });
+
+    it('returns 429 when free-tier daily limit exceeded', async () => {
+      const server = rateLimitedApp(2);
+      // Use up the limit
+      for (let i = 0; i < 2; i++) {
+        await server.inject({
+          method: 'POST',
+          url: '/api/create',
+          payload: { markdown: `# Page ${i}` },
+        });
+      }
+      // Next request should be rate limited
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Over limit' },
+      });
+      expect(res.statusCode).toBe(429);
+      const body = JSON.parse(res.body);
+      expect(body.error).toBe('rate_limit_exceeded');
+      expect(body.used).toBe(3);
+      expect(body.limit).toBe(2);
+      expect(body.upgrade).toBeDefined();
+      expect(body.upgrade.stripe.checkoutUrl).toContain('/api/stripe/checkout');
+    });
+
+    it('does not rate limit paid tier (stripe)', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_rl', 'cus_rl', 'pro');
+      const stripe = new MockStripeService(keyStore);
+      const rateLimiter = new MemoryRateLimiter(1); // very low limit
+      const server = buildApp({
+        baseUrl: BASE_URL,
+        store: new MemoryStore(),
+        stripe,
+        rateLimiter,
+      });
+
+      // First free request consumes the limit
+      await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Free' },
+      });
+
+      // Stripe request should still work
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_rl' },
+        payload: { markdown: '# Paid' },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(JSON.parse(res.body).tier).toBe('stripe');
+    });
+
+    it('includes upgrade info in 429 response', async () => {
+      const server = rateLimitedApp(0); // zero limit for immediate rejection
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Test' },
+      });
+      expect(res.statusCode).toBe(429);
+      const body = JSON.parse(res.body);
+      expect(body.message).toContain('pages per day');
+      expect(body.upgrade.stripe.description).toContain('unlimited');
+      expect(body.upgrade.x402.description).toContain('USDC');
     });
   });
 
