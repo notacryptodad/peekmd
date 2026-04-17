@@ -14,7 +14,7 @@ import type { SubscriptionPlan } from './tiers.js';
 import type { ApiKeyRecord } from './stripe.js';
 import { KVApiKeyStore, InMemoryApiKeyStore, MockStripeService, StripeClient } from './stripe.js';
 import type { StripeService } from './stripe.js';
-import { sendApiKeyEmail } from './email.js';
+import { sendApiKeyEmail, sendRotationEmail, sendRecoveryEmail } from './email.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
 import { DEMO_MARKDOWN } from './demo.js';
@@ -449,6 +449,98 @@ export default {
       } catch (err) {
         return json({ error: 'portal_failed', message: (err as Error).message }, 500);
       }
+    }
+
+    // ─── API Key Management ────────────────────────────────────
+
+    // GET /api/keys — view current API key
+    if (url.pathname === '/api/keys' && request.method === 'GET') {
+      const authorization = request.headers.get('authorization');
+      if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+        return json({ error: 'API key required. Pass Authorization: Bearer sk_...' }, 401);
+      }
+      const apiKey = authorization.replace(/^Bearer\s+/i, '');
+      const keyRecord = await stripe.validateApiKey(apiKey);
+      if (!keyRecord) return json({ error: 'Invalid API key' }, 401);
+      const info = await stripe.getKeyInfo(keyRecord.stripeCustomerId);
+      if (!info) return json({ error: 'Key info not found' }, 404);
+      return json({
+        key: info.key,
+        maskedKey: info.maskedKey,
+        customerId: info.customerId,
+        plan: info.plan ?? null,
+      });
+    }
+
+    // POST /api/keys/rotate — rotate API key
+    if (url.pathname === '/api/keys/rotate' && request.method === 'POST') {
+      const authorization = request.headers.get('authorization');
+      if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+        return json({ error: 'API key required. Pass Authorization: Bearer sk_...' }, 401);
+      }
+      const apiKey = authorization.replace(/^Bearer\s+/i, '');
+      const keyRecord = await stripe.validateApiKey(apiKey);
+      if (!keyRecord) return json({ error: 'Invalid API key' }, 401);
+      try {
+        const result = await stripe.rotateApiKey(keyRecord.stripeCustomerId);
+        const info = await stripe.getKeyInfo(keyRecord.stripeCustomerId);
+        if (info?.email && env.RESEND_API_KEY) {
+          sendRotationEmail({
+            resendApiKey: env.RESEND_API_KEY,
+            from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
+            to: info.email,
+            newApiKey: result.newKey,
+            oldKeyPrefix: result.oldKeyPrefix,
+            baseUrl,
+          }).catch(() => {});
+        }
+        return json({
+          newKey: result.newKey,
+          oldKeyPrefix: result.oldKeyPrefix,
+          message: 'API key rotated. The old key is now invalid.',
+          emailSent: !!(info?.email && env.RESEND_API_KEY),
+        });
+      } catch (err) {
+        return json({ error: 'rotation_failed', message: (err as Error).message }, 500);
+      }
+    }
+
+    // POST /api/keys/recover — send current key to subscriber email
+    if (url.pathname === '/api/keys/recover' && request.method === 'POST') {
+      let body: { email?: string };
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: 'invalid JSON body' }, 400);
+      }
+      const { email } = body;
+      if (!email || typeof email !== 'string') {
+        return json({ error: 'email is required' }, 400);
+      }
+      const rateLimiter = new KVRateLimiter(env.PAGES);
+      const rl = await rateLimiter.consume(`recover:${email.toLowerCase()}`);
+      if (!rl.allowed) {
+        return json({
+          error: 'rate_limit_exceeded',
+          message: 'Too many recovery attempts. Try again tomorrow.',
+        }, 429);
+      }
+      const successResponse = {
+        ok: true,
+        message: 'If an account exists with that email, the API key has been sent.',
+      };
+      const info = await stripe.recoverKeyByEmail(email);
+      if (!info) return json(successResponse);
+      if (info.email && env.RESEND_API_KEY) {
+        sendRecoveryEmail({
+          resendApiKey: env.RESEND_API_KEY,
+          from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
+          to: info.email,
+          apiKey: info.key,
+          baseUrl,
+        }).catch(() => {});
+      }
+      return json(successResponse);
     }
 
     if (url.pathname === '/api/billing/status' && request.method === 'GET') {

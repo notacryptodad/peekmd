@@ -13,6 +13,9 @@ function createMockKV() {
     async put(key: string, value: string): Promise<void> {
       store.set(key, value);
     },
+    async delete(key: string): Promise<void> {
+      store.delete(key);
+    },
   };
 }
 
@@ -112,5 +115,98 @@ describe('KVApiKeyStore', () => {
 
     const record = await store.getRecordByKey('sk_test_abc');
     expect(record!.plan).toBeUndefined();
+  });
+
+  // ─── Reverse index tests ────────────────────────────────────
+
+  it('add() creates customer→key reverse index', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_abc', 'cus_123', 'pro', 'user@test.com');
+
+    const key = await store.getKeyByCustomerId('cus_123');
+    expect(key).toBe('sk_test_abc');
+  });
+
+  it('add() creates email→customer reverse index', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_abc', 'cus_123', 'pro', 'user@test.com');
+
+    const customerId = await store.getCustomerByEmail('user@test.com');
+    expect(customerId).toBe('cus_123');
+  });
+
+  it('getCustomerByEmail() is case-insensitive', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_abc', 'cus_123', 'pro', 'User@Test.COM');
+
+    const customerId = await store.getCustomerByEmail('user@test.com');
+    expect(customerId).toBe('cus_123');
+  });
+
+  it('getKeyByCustomerId() returns undefined for unknown customer', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    const key = await store.getKeyByCustomerId('cus_unknown');
+    expect(key).toBeUndefined();
+  });
+
+  it('getCustomerByEmail() returns undefined for unknown email', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    const customerId = await store.getCustomerByEmail('nobody@test.com');
+    expect(customerId).toBeUndefined();
+  });
+
+  it('deleteKey() removes the forward index', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_del', 'cus_del', 'basic');
+    await store.deleteKey('sk_test_del');
+
+    const result = await store.validate('sk_test_del');
+    expect(result).toBeUndefined();
+  });
+
+  it('setPlan() persists plan update to KV via forward record', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_plan', 'cus_plan', 'basic', 'plan@test.com');
+    await store.setPlan('cus_plan', 'pro');
+
+    // Verify persisted in KV
+    const record = await store.getRecordByKey('sk_test_plan');
+    expect(record!.plan).toBe('pro');
+  });
+
+  it('getPlan() falls back to KV when not cached', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_fb', 'cus_fb', 'pro', 'fb@test.com');
+
+    // Create a fresh store instance (no cache)
+    const store2 = new KVApiKeyStore(kv);
+    const plan = await store2.getPlan('cus_fb');
+    expect(plan).toBe('pro');
+  });
+
+  it('add() stores email in forward record', async () => {
+    const kv = createMockKV();
+    const store = new KVApiKeyStore(kv);
+
+    await store.add('sk_test_email', 'cus_email', 'basic', 'hello@test.com');
+
+    const record = await store.getRecordByKey('sk_test_email');
+    expect(record!.email).toBe('hello@test.com');
   });
 });

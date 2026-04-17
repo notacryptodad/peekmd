@@ -1126,6 +1126,207 @@ describe('peekmd API', () => {
     });
   });
 
+  // ─── API Key Management ──────────────────────────────────
+
+  describe('GET /api/keys', () => {
+    it('returns key info for valid API key', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_keyinfo', 'cus_keyinfo', 'pro', 'user@example.com');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/keys',
+        headers: { authorization: 'Bearer sk_test_keyinfo' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.key).toBe('sk_test_keyinfo');
+      expect(body.maskedKey).toContain('sk_tes');
+      expect(body.maskedKey).toContain('...');
+      expect(body.customerId).toBe('cus_keyinfo');
+      expect(body.plan).toBe('pro');
+    });
+
+    it('rejects missing API key', async () => {
+      const server = app();
+      const res = await server.inject({ method: 'GET', url: '/api/keys' });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('rejects invalid API key', async () => {
+      const { server } = stripeApp();
+      const res = await server.inject({
+        method: 'GET',
+        url: '/api/keys',
+        headers: { authorization: 'Bearer sk_test_bad' },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('POST /api/keys/rotate', () => {
+    it('rotates API key and returns new key', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_rotate_old', 'cus_rotate', 'pro', 'rotate@example.com');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/keys/rotate',
+        headers: { authorization: 'Bearer sk_test_rotate_old' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.newKey).toMatch(/^sk_/);
+      expect(body.newKey).not.toBe('sk_test_rotate_old');
+      expect(body.oldKeyPrefix).toContain('...');
+      expect(body.message).toContain('rotated');
+    });
+
+    it('old key becomes invalid after rotation', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_rotate2', 'cus_rotate2', 'basic');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      // Rotate
+      const rotateRes = await server.inject({
+        method: 'POST',
+        url: '/api/keys/rotate',
+        headers: { authorization: 'Bearer sk_test_rotate2' },
+      });
+      const { newKey } = JSON.parse(rotateRes.body);
+
+      // Old key should fail
+      const oldRes = await server.inject({
+        method: 'GET',
+        url: '/api/keys',
+        headers: { authorization: 'Bearer sk_test_rotate2' },
+      });
+      expect(oldRes.statusCode).toBe(401);
+
+      // New key should work
+      const newRes = await server.inject({
+        method: 'GET',
+        url: '/api/keys',
+        headers: { authorization: `Bearer ${newKey}` },
+      });
+      expect(newRes.statusCode).toBe(200);
+      expect(JSON.parse(newRes.body).key).toBe(newKey);
+    });
+
+    it('preserves plan after rotation', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_plankeep', 'cus_plankeep', 'pro');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      const rotateRes = await server.inject({
+        method: 'POST',
+        url: '/api/keys/rotate',
+        headers: { authorization: 'Bearer sk_test_plankeep' },
+      });
+      const { newKey } = JSON.parse(rotateRes.body);
+
+      const statusRes = await server.inject({
+        method: 'GET',
+        url: '/api/billing/status',
+        headers: { authorization: `Bearer ${newKey}` },
+      });
+      expect(JSON.parse(statusRes.body).plan).toBe('pro');
+    });
+
+    it('rejects missing API key', async () => {
+      const server = app();
+      const res = await server.inject({ method: 'POST', url: '/api/keys/rotate' });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('POST /api/keys/recover', () => {
+    it('returns success for known email (does not leak info)', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_recover', 'cus_recover', 'basic', 'recover@example.com');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/keys/recover',
+        payload: { email: 'recover@example.com' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.ok).toBe(true);
+      expect(body.message).toContain('If an account exists');
+      // Should NOT contain the actual key in the response
+      expect(body.key).toBeUndefined();
+    });
+
+    it('returns same success for unknown email (prevents enumeration)', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/keys/recover',
+        payload: { email: 'nobody@example.com' },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.ok).toBe(true);
+      expect(body.message).toContain('If an account exists');
+    });
+
+    it('rejects missing email', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/keys/recover',
+        payload: {},
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('rate limits recovery attempts', async () => {
+      const rateLimiter = new MemoryRateLimiter(2);
+      const server = buildApp({ baseUrl: BASE_URL, store: new MemoryStore(), rateLimiter });
+
+      // Use up the limit
+      for (let i = 0; i < 2; i++) {
+        await server.inject({
+          method: 'POST',
+          url: '/api/keys/recover',
+          payload: { email: 'ratelimit@example.com' },
+        });
+      }
+
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/keys/recover',
+        payload: { email: 'ratelimit@example.com' },
+      });
+      expect(res.statusCode).toBe(429);
+      expect(JSON.parse(res.body).error).toBe('rate_limit_exceeded');
+    });
+
+    it('is case-insensitive for email', async () => {
+      const keyStore = new InMemoryApiKeyStore();
+      keyStore.add('sk_test_case', 'cus_case', 'basic', 'CaSe@Example.COM');
+      const stripe = new MockStripeService(keyStore);
+      const server = app({ stripe });
+
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/keys/recover',
+        payload: { email: 'case@example.com' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(JSON.parse(res.body).ok).toBe(true);
+    });
+  });
+
   // ─── Health ────────────────────────────────────────────────
 
   describe('Health', () => {

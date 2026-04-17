@@ -16,7 +16,7 @@ import { DEMO_MARKDOWN } from './demo.js';
 import { ogImageSvg } from './og-image.js';
 import { MemoryRateLimiter, rateLimitResponse } from './rate-limit.js';
 import type { RateLimiter } from './rate-limit.js';
-import { sendApiKeyEmail } from './email.js';
+import { sendApiKeyEmail, sendRotationEmail, sendRecoveryEmail } from './email.js';
 
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
@@ -392,6 +392,106 @@ export function buildApp(opts?: AppOptions) {
     }
     const status = await stripe.getBillingStatus(keyRecord.stripeCustomerId);
     return reply.send(status);
+  });
+
+  // ─── API Key Management ────────────────────────────────────
+
+  // GET /api/keys — view current API key (authenticated via Bearer token)
+  app.get('/api/keys', async (request, reply) => {
+    const authorization = request.headers.authorization;
+    if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+      return reply.status(401).send({ error: 'API key required. Pass Authorization: Bearer sk_...' });
+    }
+    const apiKey = authorization.replace(/^Bearer\s+/i, '');
+    const keyRecord = await stripe.validateApiKey(apiKey);
+    if (!keyRecord) {
+      return reply.status(401).send({ error: 'Invalid API key' });
+    }
+    const info = await stripe.getKeyInfo(keyRecord.stripeCustomerId);
+    if (!info) {
+      return reply.status(404).send({ error: 'Key info not found' });
+    }
+    return reply.send({
+      key: info.key,
+      maskedKey: info.maskedKey,
+      customerId: info.customerId,
+      plan: info.plan ?? null,
+    });
+  });
+
+  // POST /api/keys/rotate — generate new key, invalidate old, email new key
+  app.post('/api/keys/rotate', async (request, reply) => {
+    const authorization = request.headers.authorization;
+    if (!authorization || !/^Bearer\s+sk_/i.test(authorization)) {
+      return reply.status(401).send({ error: 'API key required. Pass Authorization: Bearer sk_...' });
+    }
+    const apiKey = authorization.replace(/^Bearer\s+/i, '');
+    const keyRecord = await stripe.validateApiKey(apiKey);
+    if (!keyRecord) {
+      return reply.status(401).send({ error: 'Invalid API key' });
+    }
+    try {
+      const result = await stripe.rotateApiKey(keyRecord.stripeCustomerId);
+      // Get updated info to find email
+      const info = await stripe.getKeyInfo(keyRecord.stripeCustomerId);
+      // Email new key in the background
+      if (info?.email && resendConfig) {
+        sendRotationEmail({
+          resendApiKey: resendConfig.apiKey,
+          from: resendConfig.fromEmail,
+          to: info.email,
+          newApiKey: result.newKey,
+          oldKeyPrefix: result.oldKeyPrefix,
+          baseUrl,
+        }).catch(() => {});
+      }
+      return reply.send({
+        newKey: result.newKey,
+        oldKeyPrefix: result.oldKeyPrefix,
+        message: 'API key rotated. The old key is now invalid.',
+        emailSent: !!(info?.email && resendConfig),
+      });
+    } catch (err) {
+      return reply.status(500).send({ error: 'rotation_failed', message: (err as Error).message });
+    }
+  });
+
+  // POST /api/keys/recover — send current key to subscriber email (rate-limited)
+  app.post<{
+    Body: { email?: string };
+  }>('/api/keys/recover', async (request, reply) => {
+    const { email } = request.body ?? {};
+    if (!email || typeof email !== 'string') {
+      return reply.status(400).send({ error: 'email is required' });
+    }
+    // Rate limit: reuse the existing limiter with a recover: prefix.
+    // Default limit is 20/day per key which is generous for recovery.
+    const rl = await rateLimiter.consume(`recover:${email.toLowerCase()}`);
+    if (!rl.allowed) {
+      return reply.status(429).send({
+        error: 'rate_limit_exceeded',
+        message: 'Too many recovery attempts. Try again tomorrow.',
+      });
+    }
+    const info = await stripe.recoverKeyByEmail(email);
+    // Always return success to prevent email enumeration
+    const successResponse = {
+      ok: true,
+      message: 'If an account exists with that email, the API key has been sent.',
+    };
+    if (!info) {
+      return reply.send(successResponse);
+    }
+    if (info.email && resendConfig) {
+      sendRecoveryEmail({
+        resendApiKey: resendConfig.apiKey,
+        from: resendConfig.fromEmail,
+        to: info.email,
+        apiKey: info.key,
+        baseUrl,
+      }).catch(() => {});
+    }
+    return reply.send(successResponse);
   });
 
   // GET /api/pricing — show pricing info for all tiers

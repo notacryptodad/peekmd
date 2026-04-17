@@ -16,9 +16,15 @@ export interface ApiKeyRecord {
 /** Common interface for API key storage backends. */
 export interface ApiKeyStore {
   validate(key: string): ApiKeyRecord | undefined | Promise<ApiKeyRecord | undefined>;
-  add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan): void | Promise<void>;
+  add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan, email?: string): void | Promise<void>;
   getPlan(customerId: string): SubscriptionPlan | undefined | Promise<SubscriptionPlan | undefined>;
   setPlan(customerId: string, plan: SubscriptionPlan): void | Promise<void>;
+  /** Reverse lookup: get the current API key for a Stripe customer. */
+  getKeyByCustomerId(customerId: string): string | undefined | Promise<string | undefined>;
+  /** Reverse lookup: get customer ID by subscriber email. */
+  getCustomerByEmail(email: string): string | undefined | Promise<string | undefined>;
+  /** Delete an API key (forward + reverse index). */
+  deleteKey(key: string): void | Promise<void>;
 }
 
 export interface BillingStatus {
@@ -63,6 +69,19 @@ export interface WebhookResult {
   error?: string;
 }
 
+export interface KeyInfo {
+  key: string;
+  maskedKey: string;
+  customerId: string;
+  plan: SubscriptionPlan | undefined;
+  email?: string;
+}
+
+export interface RotateResult {
+  newKey: string;
+  oldKeyPrefix: string;
+}
+
 export interface StripeService {
   validateApiKey(key: string): Promise<ApiKeyRecord | undefined>;
   getSubscriberPlan(customerId: string): Promise<SubscriptionPlan | undefined>;
@@ -74,11 +93,23 @@ export interface StripeService {
   createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult>;
   handleWebhook(rawBody: string, signature: string): Promise<WebhookResult>;
   isConfigured(): boolean;
+  /** Get key info for an authenticated customer. */
+  getKeyInfo(customerId: string): Promise<KeyInfo | undefined>;
+  /** Rotate API key: invalidate old, generate new, return both. */
+  rotateApiKey(customerId: string): Promise<RotateResult>;
+  /** Recover API key by email: returns customer info if found. */
+  recoverKeyByEmail(email: string): Promise<KeyInfo | undefined>;
 }
 
 /** Generate a peekmd API key. */
 export function generateApiKey(): string {
   return `sk_${nanoid(32)}`;
+}
+
+/** Mask an API key for display: sk_abc...xyz */
+export function maskApiKey(key: string): string {
+  if (key.length <= 10) return `${key.slice(0, 4)}...`;
+  return `${key.slice(0, 6)}...${key.slice(-4)}`;
 }
 
 /** Get the current billing period key (YYYY-MM) and start/end dates. */
@@ -98,6 +129,8 @@ export function getBillingPeriod(now = new Date()): { key: string; start: Date; 
 export class InMemoryApiKeyStore implements ApiKeyStore {
   private keys = new Map<string, ApiKeyRecord>();
   private customerPlans = new Map<string, SubscriptionPlan>();
+  private customerToKey = new Map<string, string>();
+  private emailToCustomer = new Map<string, string>();
 
   constructor(keysConfig?: string) {
     if (keysConfig) {
@@ -108,6 +141,7 @@ export class InMemoryApiKeyStore implements ApiKeyStore {
           const customerId = parts.slice(1).join(':');
           if (key && customerId) {
             this.keys.set(key, { key, stripeCustomerId: customerId });
+            this.customerToKey.set(customerId, key);
           }
         }
       }
@@ -118,10 +152,14 @@ export class InMemoryApiKeyStore implements ApiKeyStore {
     return this.keys.get(key);
   }
 
-  add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan): void {
+  add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan, email?: string): void {
     this.keys.set(key, { key, stripeCustomerId });
+    this.customerToKey.set(stripeCustomerId, key);
     if (plan) {
       this.customerPlans.set(stripeCustomerId, plan);
+    }
+    if (email) {
+      this.emailToCustomer.set(email.toLowerCase(), stripeCustomerId);
     }
   }
 
@@ -131,6 +169,25 @@ export class InMemoryApiKeyStore implements ApiKeyStore {
 
   setPlan(customerId: string, plan: SubscriptionPlan): void {
     this.customerPlans.set(customerId, plan);
+  }
+
+  getKeyByCustomerId(customerId: string): string | undefined {
+    return this.customerToKey.get(customerId);
+  }
+
+  getCustomerByEmail(email: string): string | undefined {
+    return this.emailToCustomer.get(email.toLowerCase());
+  }
+
+  deleteKey(key: string): void {
+    const record = this.keys.get(key);
+    if (record) {
+      this.keys.delete(key);
+      // Only clear customer→key if it still points to this key
+      if (this.customerToKey.get(record.stripeCustomerId) === key) {
+        this.customerToKey.delete(record.stripeCustomerId);
+      }
+    }
   }
 
   size(): number {
@@ -150,14 +207,28 @@ export interface KVApiKeyRecord {
  * KV-backed API key store for Cloudflare Workers.
  * Uses the same PAGES KV namespace with `apikey:` prefix.
  */
+/** KV reverse index: stored under `customer:{cus_xxx}` */
+export interface KVCustomerIndex {
+  apiKey: string;
+  email?: string;
+}
+
 export class KVApiKeyStore implements ApiKeyStore {
   /** Cache customer→plan from the most recent validate() call. */
   private planCache = new Map<string, SubscriptionPlan>();
 
-  constructor(private kv: { get(key: string, options?: { type?: string }): Promise<string | null>; put(key: string, value: string): Promise<void> }) {}
+  constructor(private kv: { get(key: string, options?: { type?: string }): Promise<string | null>; put(key: string, value: string): Promise<void>; delete(key: string): Promise<void> }) {}
 
   private kvKey(apiKey: string): string {
     return `apikey:${apiKey}`;
+  }
+
+  private customerKey(customerId: string): string {
+    return `customer:${customerId}`;
+  }
+
+  private emailKey(email: string): string {
+    return `email:${email.toLowerCase()}`;
   }
 
   async validate(key: string): Promise<ApiKeyRecord | undefined> {
@@ -171,27 +242,70 @@ export class KVApiKeyStore implements ApiKeyStore {
     return { key, stripeCustomerId: record.stripeCustomerId };
   }
 
-  async add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan): Promise<void> {
+  async add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan, email?: string): Promise<void> {
     const record: KVApiKeyRecord = {
       stripeCustomerId,
       plan,
+      email,
       createdAt: new Date().toISOString(),
     };
     await this.kv.put(this.kvKey(key), JSON.stringify(record));
+
+    // Write reverse indices
+    const customerIndex: KVCustomerIndex = { apiKey: key, email };
+    await this.kv.put(this.customerKey(stripeCustomerId), JSON.stringify(customerIndex));
+    if (email) {
+      await this.kv.put(this.emailKey(email), JSON.stringify({ stripeCustomerId }));
+    }
+
     if (plan) {
       this.planCache.set(stripeCustomerId, plan);
     }
   }
 
   async getPlan(customerId: string): Promise<SubscriptionPlan | undefined> {
-    return this.planCache.get(customerId);
+    // Try in-memory cache first
+    const cached = this.planCache.get(customerId);
+    if (cached) return cached;
+    // Fall back to KV: look up customer index → apiKey → full record
+    const apiKey = await this.getKeyByCustomerId(customerId);
+    if (!apiKey) return undefined;
+    const record = await this.getRecordByKey(apiKey);
+    if (record?.plan) {
+      this.planCache.set(customerId, record.plan);
+      return record.plan;
+    }
+    return undefined;
   }
 
   async setPlan(customerId: string, plan: SubscriptionPlan): Promise<void> {
     this.planCache.set(customerId, plan);
-    // Note: this only updates the in-memory cache. Full KV persistence of
-    // plan changes (e.g., from webhooks) requires a customer→key index,
-    // which will be addressed in PEE-31 (key rotation/recovery).
+    // Persist to KV via the forward record
+    const apiKey = await this.getKeyByCustomerId(customerId);
+    if (apiKey) {
+      await this.updateRecord(apiKey, { plan });
+    }
+  }
+
+  async getKeyByCustomerId(customerId: string): Promise<string | undefined> {
+    const raw = await this.kv.get(this.customerKey(customerId), { type: 'text' });
+    if (!raw) return undefined;
+    const index: KVCustomerIndex = JSON.parse(raw);
+    return index.apiKey;
+  }
+
+  async getCustomerByEmail(email: string): Promise<string | undefined> {
+    const raw = await this.kv.get(this.emailKey(email), { type: 'text' });
+    if (!raw) return undefined;
+    const index: { stripeCustomerId: string } = JSON.parse(raw);
+    return index.stripeCustomerId;
+  }
+
+  async deleteKey(key: string): Promise<void> {
+    const raw = await this.kv.get(this.kvKey(key), { type: 'text' });
+    if (!raw) return;
+    await this.kv.delete(this.kvKey(key));
+    // Note: we don't delete reverse indices here — rotation replaces them
   }
 
   /** Direct record lookup for plan retrieval during page creation. */
@@ -322,7 +436,7 @@ export class StripeClient implements StripeService {
     }
 
     const apiKey = generateApiKey();
-    await this.keyStore.add(apiKey, customerId, plan);
+    await this.keyStore.add(apiKey, customerId, plan, email);
     return { apiKey, customerId, email, plan };
   }
 
@@ -332,6 +446,42 @@ export class StripeClient implements StripeService {
       return_url: returnUrl,
     });
     return { url: session.url };
+  }
+
+  async getKeyInfo(customerId: string): Promise<KeyInfo | undefined> {
+    const key = await this.keyStore.getKeyByCustomerId(customerId);
+    if (!key) return undefined;
+    const plan = await this.keyStore.getPlan(customerId);
+    // Try to get email from the KV record if available
+    let email: string | undefined;
+    if ('getRecordByKey' in this.keyStore) {
+      const record = await (this.keyStore as KVApiKeyStore).getRecordByKey(key);
+      email = record?.email;
+    }
+    return { key, maskedKey: maskApiKey(key), customerId, plan, email };
+  }
+
+  async rotateApiKey(customerId: string): Promise<RotateResult> {
+    const oldKey = await this.keyStore.getKeyByCustomerId(customerId);
+    if (!oldKey) throw new Error('No API key found for customer');
+    const plan = await this.keyStore.getPlan(customerId);
+    // Get email from existing record if available
+    let email: string | undefined;
+    if ('getRecordByKey' in this.keyStore) {
+      const record = await (this.keyStore as KVApiKeyStore).getRecordByKey(oldKey);
+      email = record?.email;
+    }
+    const newKey = generateApiKey();
+    // Delete old key, add new one (reverse indices update in add)
+    await this.keyStore.deleteKey(oldKey);
+    await this.keyStore.add(newKey, customerId, plan, email);
+    return { newKey, oldKeyPrefix: maskApiKey(oldKey) };
+  }
+
+  async recoverKeyByEmail(email: string): Promise<KeyInfo | undefined> {
+    const customerId = await this.keyStore.getCustomerByEmail(email);
+    if (!customerId) return undefined;
+    return this.getKeyInfo(customerId);
   }
 
   async handleWebhook(rawBody: string, signature: string): Promise<WebhookResult> {
@@ -476,14 +626,38 @@ export class MockStripeService implements StripeService {
     if (!session) {
       throw new Error('Invalid or expired checkout session');
     }
+    const email = 'test@example.com';
     const apiKey = generateApiKey();
-    await this.keyStore.add(apiKey, session.customerId, session.plan);
+    await this.keyStore.add(apiKey, session.customerId, session.plan, email);
     this.checkoutSessions.delete(sessionId);
-    return { apiKey, customerId: session.customerId, email: 'test@example.com', plan: session.plan };
+    return { apiKey, customerId: session.customerId, email, plan: session.plan };
   }
 
   async createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult> {
     return { url: `${returnUrl}?portal=mock&customer=${customerId}` };
+  }
+
+  async getKeyInfo(customerId: string): Promise<KeyInfo | undefined> {
+    const key = this.keyStore.getKeyByCustomerId(customerId);
+    if (!key) return undefined;
+    const plan = this.keyStore.getPlan(customerId);
+    return { key, maskedKey: maskApiKey(key), customerId, plan };
+  }
+
+  async rotateApiKey(customerId: string): Promise<RotateResult> {
+    const oldKey = this.keyStore.getKeyByCustomerId(customerId);
+    if (!oldKey) throw new Error('No API key found for customer');
+    const plan = this.keyStore.getPlan(customerId);
+    const newKey = generateApiKey();
+    this.keyStore.deleteKey(oldKey);
+    this.keyStore.add(newKey, customerId, plan);
+    return { newKey, oldKeyPrefix: maskApiKey(oldKey) };
+  }
+
+  async recoverKeyByEmail(email: string): Promise<KeyInfo | undefined> {
+    const customerId = this.keyStore.getCustomerByEmail(email);
+    if (!customerId) return undefined;
+    return this.getKeyInfo(customerId);
   }
 
   async handleWebhook(rawBody: string, _signature: string): Promise<WebhookResult> {
