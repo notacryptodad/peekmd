@@ -281,6 +281,20 @@ body {
 .hljs-selector-id { color: #fab387; }
 .hljs-literal { color: #fab387; }
 .hljs-params { color: #f2cdcd; }
+
+/* Mobile responsiveness for rendered pages */
+@media (max-width: 480px) {
+  .topbar { padding: 10px 16px; font-size: 12px; }
+  .topbar-left { gap: 10px; }
+  .brand { font-size: 14px; }
+  .progress-bar { width: 60px; }
+  .content { padding: 24px 16px 60px; }
+  .content h1 { font-size: 1.6em; }
+  .content h2 { font-size: 1.3em; }
+  .content pre { padding: 12px 14px; font-size: 0.8em; }
+  .content table { min-width: 280px; }
+  .ad-banner { padding: 16px; font-size: 12px; }
+}
 </style>
 </head>
 <body>
@@ -570,6 +584,35 @@ pre {
   text-decoration: none;
 }
 .gh-cta:hover { border-color: #94a3b8; color: #fff; }
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+  body { padding: 24px 16px; }
+  h1 { font-size: 1.8em; }
+  .tagline { font-size: 1.1em; }
+  .problem { font-size: 0.9em; }
+  h2 { font-size: 1em; }
+  pre { padding: 14px 12px; font-size: 0.78em; }
+  .tab-btn { padding: 6px 10px; font-size: 0.8em; }
+  .features { gap: 16px; }
+  .feature dt { font-size: 0.85em; }
+  .feature dd { font-size: 0.78em; }
+  .step { min-width: 120px; padding: 16px 12px; }
+  .steps { gap: 12px; }
+  .demo-btn, .gh-cta { padding: 10px 20px; font-size: 0.9em; }
+  .plan-card { padding: 20px 16px; }
+  .plan-price { font-size: 1.5em; }
+  .info code { font-size: 0.75em; word-break: break-all; }
+}
+@media (max-width: 360px) {
+  body { padding: 20px 12px; }
+  h1 { font-size: 1.5em; }
+  .tagline { font-size: 1em; }
+  pre { padding: 12px 10px; font-size: 0.72em; }
+  .features { flex-direction: column; gap: 12px; }
+  .cta-row { flex-direction: column; }
+  .demo-btn, .gh-cta { width: 100%; text-align: center; }
+}
 </style>
 </head>
 <body>
@@ -681,7 +724,7 @@ console.log(url);
         </ul>
         <span class="plan-cta plan-cta-free">Current default</span>
       </div>
-      <div class="plan-card" style="opacity:0.5;pointer-events:none">
+      <div class="plan-card">
         <div class="plan-name">Basic</div>
         <div class="plan-price">$9<span class="period"> /mo</span></div>
         <ul class="plan-details">
@@ -690,9 +733,9 @@ console.log(url);
           <li>No ads</li>
           <li>API key access</li>
         </ul>
-        <span class="plan-cta plan-cta-free">Coming soon</span>
+        <button class="plan-cta plan-cta-paid" onclick="fetch('${baseUrl}/api/stripe/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:'basic'})}).then(r=>r.json()).then(d=>{if(d.url)window.location=d.url;else alert(d.message||d.error)}).catch(()=>alert('Checkout unavailable'))">Subscribe</button>
       </div>
-      <div class="plan-card" style="opacity:0.5;pointer-events:none">
+      <div class="plan-card featured">
         <div class="plan-name">Pro</div>
         <div class="plan-price">$29<span class="period"> /mo</span></div>
         <ul class="plan-details">
@@ -701,7 +744,7 @@ console.log(url);
           <li>No ads</li>
           <li>API key access</li>
         </ul>
-        <span class="plan-cta plan-cta-free">Coming soon</span>
+        <button class="plan-cta plan-cta-paid" onclick="fetch('${baseUrl}/api/stripe/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:'pro'})}).then(r=>r.json()).then(d=>{if(d.url)window.location=d.url;else alert(d.message||d.error)}).catch(()=>alert('Checkout unavailable'))">Subscribe</button>
       </div>
     </div>
   </div>
