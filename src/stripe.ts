@@ -211,7 +211,7 @@ export class StripeClient implements StripeService {
     }
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
-      line_items: [{ price: priceId }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${baseUrl}/api/stripe/callback?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/api/pricing`,
     });
