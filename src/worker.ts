@@ -6,7 +6,7 @@
 import { nanoid } from 'nanoid';
 import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-worker.js';
-import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate } from './template.js';
+import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate, keyManagementTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
@@ -453,6 +453,11 @@ export default {
 
     // ─── API Key Management ────────────────────────────────────
 
+    // GET /api/keys/manage — HTML key management page
+    if (url.pathname === '/api/keys/manage' && request.method === 'GET') {
+      return html(keyManagementTemplate({ baseUrl }));
+    }
+
     // GET /api/keys — view current API key
     if (url.pathname === '/api/keys' && request.method === 'GET') {
       const authorization = request.headers.get('authorization');
@@ -518,11 +523,21 @@ export default {
         return json({ error: 'email is required' }, 400);
       }
       const rateLimiter = new KVRateLimiter(env.PAGES);
+      // Rate limit by IP (prevents mass enumeration from a single source)
+      const ip = request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '0.0.0.0';
+      const ipRl = await rateLimiter.consume(`recover-ip:${ip}`);
+      if (!ipRl.allowed) {
+        return json({
+          error: 'rate_limit_exceeded',
+          message: 'Too many recovery attempts. Try again tomorrow.',
+        }, 429);
+      }
+      // Rate limit by email (prevents targeted abuse of a single address)
       const rl = await rateLimiter.consume(`recover:${email.toLowerCase()}`);
       if (!rl.allowed) {
         return json({
           error: 'rate_limit_exceeded',
-          message: 'Too many recovery attempts. Try again tomorrow.',
+          message: 'Too many recovery attempts for this email. Try again tomorrow.',
         }, 429);
       }
       const successResponse = {

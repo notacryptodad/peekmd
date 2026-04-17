@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-node.js';
-import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate } from './template.js';
+import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate, keyManagementTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 import type { SubscriptionPlan } from './tiers.js';
@@ -396,6 +396,11 @@ export function buildApp(opts?: AppOptions) {
 
   // ─── API Key Management ────────────────────────────────────
 
+  // GET /api/keys/manage — HTML key management page
+  app.get('/api/keys/manage', async (_request, reply) => {
+    return reply.type('text/html').send(keyManagementTemplate({ baseUrl }));
+  });
+
   // GET /api/keys — view current API key (authenticated via Bearer token)
   app.get('/api/keys', async (request, reply) => {
     const authorization = request.headers.authorization;
@@ -464,13 +469,20 @@ export function buildApp(opts?: AppOptions) {
     if (!email || typeof email !== 'string') {
       return reply.status(400).send({ error: 'email is required' });
     }
-    // Rate limit: reuse the existing limiter with a recover: prefix.
-    // Default limit is 20/day per key which is generous for recovery.
+    // Rate limit by IP (prevents mass enumeration from a single source)
+    const ipRl = await rateLimiter.consume(`recover-ip:${request.ip}`);
+    if (!ipRl.allowed) {
+      return reply.status(429).send({
+        error: 'rate_limit_exceeded',
+        message: 'Too many recovery attempts. Try again tomorrow.',
+      });
+    }
+    // Rate limit by email (prevents targeted abuse of a single address)
     const rl = await rateLimiter.consume(`recover:${email.toLowerCase()}`);
     if (!rl.allowed) {
       return reply.status(429).send({
         error: 'rate_limit_exceeded',
-        message: 'Too many recovery attempts. Try again tomorrow.',
+        message: 'Too many recovery attempts for this email. Try again tomorrow.',
       });
     }
     const info = await stripe.recoverKeyByEmail(email);

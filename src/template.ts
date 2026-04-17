@@ -868,6 +868,159 @@ h1 { color: #60a5fa; font-size: 1.8em; margin: 0 0 8px; }
 </html>`;
 }
 
+export function keyManagementTemplate(opts: { baseUrl: string }): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>peekmd - API Key Management</title>
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: #1a1a2e; color: #94a3b8; margin: 0; padding: 20px;
+  box-sizing: border-box;
+}
+.card {
+  background: #16213e; border-radius: 12px; padding: 40px; max-width: 560px;
+  width: 100%; border: 1px solid #334155;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin: 0 0 8px; text-align: center; }
+.subtitle { color: #e2e8f0; font-size: 1.1em; margin-bottom: 28px; text-align: center; }
+h2 { color: #e2e8f0; font-size: 1.1em; margin: 24px 0 12px; border-top: 1px solid #334155; padding-top: 20px; }
+h2:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+label { display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 6px; }
+input[type="text"], input[type="email"] {
+  width: 100%; padding: 10px 14px; background: #11111b; border: 1px solid #334155;
+  border-radius: 8px; color: #e2e8f0; font-size: 0.9em; font-family: inherit;
+  box-sizing: border-box;
+}
+input:focus { outline: none; border-color: #60a5fa; }
+button {
+  padding: 10px 20px; border: none; border-radius: 8px; font-size: 0.9em;
+  cursor: pointer; margin-top: 12px; font-weight: 500; transition: background 0.2s;
+}
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-muted { background: #334155; color: #e2e8f0; }
+.btn-muted:hover { background: #475569; }
+.result {
+  margin-top: 12px; padding: 12px 14px; border-radius: 8px; font-size: 0.85em;
+  display: none; word-break: break-all;
+}
+.result.success { display: block; background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
+.result.error { display: block; background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+.key-display {
+  background: #11111b; border: 1px solid #334155; border-radius: 8px;
+  padding: 14px 18px; font-family: 'SF Mono', Monaco, monospace; font-size: 0.85em;
+  color: #60a5fa; word-break: break-all; cursor: pointer; position: relative;
+  margin-top: 8px; transition: border-color 0.2s;
+}
+.key-display:hover { border-color: #60a5fa; }
+.note { color: #64748b; font-size: 0.8em; margin-top: 8px; }
+.info-row { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.85em; }
+.info-row .label { color: #64748b; }
+.info-row .value { color: #e2e8f0; }
+.links { margin-top: 24px; text-align: center; border-top: 1px solid #334155; padding-top: 16px; }
+.links a { color: #60a5fa; text-decoration: none; margin: 0 12px; font-size: 0.9em; }
+.links a:hover { text-decoration: underline; }
+.section { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>API Key Management</h1>
+  <p class="subtitle">View, rotate, or recover your peekmd API key.</p>
+
+  <div class="section">
+    <h2>View / Rotate Key</h2>
+    <label for="api-key-input">Your current API key</label>
+    <input type="text" id="api-key-input" placeholder="sk_..." autocomplete="off" spellcheck="false">
+
+    <div style="display: flex; gap: 8px; margin-top: 12px;">
+      <button class="btn-primary" onclick="viewKey()">View Key Info</button>
+      <button class="btn-danger" onclick="rotateKey()">Rotate Key</button>
+    </div>
+    <div id="view-result" class="result"></div>
+  </div>
+
+  <div class="section">
+    <h2>Recover Lost Key</h2>
+    <label for="email-input">Email used at checkout</label>
+    <input type="email" id="email-input" placeholder="you@example.com">
+    <button class="btn-muted" onclick="recoverKey()">Send Recovery Email</button>
+    <div id="recover-result" class="result"></div>
+    <p class="note">We'll send your current API key to your email. Rate-limited to prevent abuse.</p>
+  </div>
+
+  <div class="links">
+    <a href="${opts.baseUrl}">Home</a>
+    <a href="${opts.baseUrl}/api/pricing">Pricing</a>
+  </div>
+</div>
+
+<script>
+const BASE = ${JSON.stringify(opts.baseUrl)};
+
+function showResult(el, msg, isError) {
+  el.textContent = msg;
+  el.className = 'result ' + (isError ? 'error' : 'success');
+}
+
+async function viewKey() {
+  const el = document.getElementById('view-result');
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key) { showResult(el, 'Please enter your API key.', true); return; }
+  try {
+    const res = await fetch(BASE + '/api/keys', { headers: { 'Authorization': 'Bearer ' + key } });
+    const data = await res.json();
+    if (!res.ok) { showResult(el, data.error || 'Request failed', true); return; }
+    el.className = 'result success';
+    el.innerHTML = '<div class="info-row"><span class="label">Key:</span><span class="value">' + data.maskedKey + '</span></div>'
+      + '<div class="info-row"><span class="label">Plan:</span><span class="value">' + (data.plan || 'none') + '</span></div>'
+      + '<div class="info-row"><span class="label">Customer:</span><span class="value">' + data.customerId + '</span></div>';
+  } catch (e) { showResult(el, 'Network error: ' + e.message, true); }
+}
+
+async function rotateKey() {
+  const el = document.getElementById('view-result');
+  const key = document.getElementById('api-key-input').value.trim();
+  if (!key) { showResult(el, 'Please enter your current API key.', true); return; }
+  if (!confirm('This will invalidate your current key immediately. Continue?')) return;
+  try {
+    const res = await fetch(BASE + '/api/keys/rotate', { method: 'POST', headers: { 'Authorization': 'Bearer ' + key } });
+    const data = await res.json();
+    if (!res.ok) { showResult(el, data.error || 'Rotation failed', true); return; }
+    el.className = 'result success';
+    el.innerHTML = '<strong>Key rotated!</strong> Your new key:<div class="key-display" onclick="navigator.clipboard.writeText(this.textContent.trim())">' + data.newKey + '</div>'
+      + '<div class="note" style="margin-top:8px">Old key (' + data.oldKeyPrefix + ') is now invalid.' + (data.emailSent ? ' New key emailed to you.' : '') + '</div>';
+    document.getElementById('api-key-input').value = data.newKey;
+  } catch (e) { showResult(el, 'Network error: ' + e.message, true); }
+}
+
+async function recoverKey() {
+  const el = document.getElementById('recover-result');
+  const email = document.getElementById('email-input').value.trim();
+  if (!email) { showResult(el, 'Please enter your email.', true); return; }
+  try {
+    const res = await fetch(BASE + '/api/keys/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    });
+    const data = await res.json();
+    if (res.status === 429) { showResult(el, data.message || 'Too many attempts. Try again later.', true); return; }
+    showResult(el, data.message || 'Check your email.', false);
+  } catch (e) { showResult(el, 'Network error: ' + e.message, true); }
+}
+</script>
+</body>
+</html>`;
+}
+
 export function notFoundTemplate(): string {
   return `<!DOCTYPE html>
 <html lang="en">
