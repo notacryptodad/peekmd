@@ -20,3 +20,22 @@ preview_id = "dc1bb955f5e84ddea2925ad197ddab96"
 
 [vars]
 BASE_URL = "https://peekmd.dev"
+
+# ─── Test / Staging Environment ────────────────────────────────
+# Deploy:  npx wrangler deploy --env test
+# Secrets: npx wrangler secret put STRIPE_SECRET_KEY --env test
+#          npx wrangler secret put STRIPE_BASIC_PRICE_ID --env test
+#          npx wrangler secret put STRIPE_PRO_PRICE_ID --env test
+#          npx wrangler secret put STRIPE_WEBHOOK_SECRET --env test
+[env.test]
+name = "peekmd-test"
+routes = [
+  { pattern = "test.peekmd.dev/*", zone_name = "peekmd.dev" },
+]
+
+[env.test.vars]
+BASE_URL = "https://test.peekmd.dev"
+
+[[env.test.kv_namespaces]]
+binding = "PAGES"
+id = "dc1bb955f5e84ddea2925ad197ddab96"

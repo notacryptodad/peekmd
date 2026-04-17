@@ -12,7 +12,7 @@ import type { PageStore } from './types.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 import type { SubscriptionPlan } from './tiers.js';
 import type { ApiKeyRecord } from './stripe.js';
-import { InMemoryApiKeyStore, MockStripeService } from './stripe.js';
+import { InMemoryApiKeyStore, MockStripeService, StripeClient } from './stripe.js';
 import type { StripeService } from './stripe.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
@@ -62,6 +62,18 @@ function html(body: string, status = 200): Response {
 
 function getStripeService(env: Env): StripeService {
   const apiKeyStore = new InMemoryApiKeyStore(env.STRIPE_API_KEYS);
+  if (env.STRIPE_SECRET_KEY) {
+    return new StripeClient({
+      secretKey: env.STRIPE_SECRET_KEY,
+      keyStore: apiKeyStore,
+      priceId: env.STRIPE_PRICE_ID,
+      planPriceIds: {
+        basic: env.STRIPE_BASIC_PRICE_ID,
+        pro: env.STRIPE_PRO_PRICE_ID,
+      },
+      webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+    });
+  }
   return new MockStripeService(apiKeyStore);
 }
 
