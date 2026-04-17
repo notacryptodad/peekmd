@@ -451,13 +451,14 @@ export function landingTemplate(baseUrl: string): string {
 </script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { overflow-x: hidden; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #1a1a2e; color: #e2e8f0; min-height: 100vh;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 40px 24px;
+  padding: 40px 24px; overflow-x: hidden;
 }
-.hero { text-align: center; max-width: 640px; }
+.hero { text-align: center; max-width: 640px; width: 100%; }
 h1 { font-size: 2.5em; font-weight: 700; margin-bottom: 0.2em; }
 h1 span { color: #60a5fa; }
 .tagline { font-size: 1.3em; color: #e2e8f0; margin-bottom: 0.5em; font-weight: 500; }
