@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-node.js';
-import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
+import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 import type { SubscriptionPlan } from './tiers.js';
@@ -329,14 +329,7 @@ export function buildApp(opts?: AppOptions) {
     }
     try {
       const result = await stripe.handleCheckoutCallback(sessionId);
-      return reply.send({
-        apiKey: result.apiKey,
-        customerId: result.customerId,
-        message:
-          'Subscription active. Use this API key as Authorization: Bearer ' +
-          result.apiKey +
-          ' on all requests to bypass the free tier limits and ad banner.',
-      });
+      return reply.type('text/html').send(checkoutSuccessTemplate({ apiKey: result.apiKey, baseUrl }));
     } catch (err) {
       return reply.status(400).send({
         error: 'callback_failed',

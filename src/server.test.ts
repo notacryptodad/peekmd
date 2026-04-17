@@ -534,12 +534,12 @@ describe('peekmd API', () => {
       });
       const { sessionId } = JSON.parse(checkoutRes.body);
 
-      // Complete checkout
+      // Complete checkout (returns HTML success page)
       const callbackRes = await server.inject({
         method: 'GET',
         url: `/api/stripe/callback?session_id=${sessionId}`,
       });
-      const { apiKey } = JSON.parse(callbackRes.body);
+      const apiKey = callbackRes.body.match(/>(sk_[^<]+)</)?.[1];
 
       // Check billing status shows pro plan
       const statusRes = await server.inject({
@@ -580,17 +580,18 @@ describe('peekmd API', () => {
       });
       const { sessionId } = JSON.parse(checkoutRes.body);
 
-      // Then handle the callback
+      // Then handle the callback (returns HTML success page)
       const callbackRes = await server.inject({
         method: 'GET',
         url: `/api/stripe/callback?session_id=${sessionId}`,
       });
       expect(callbackRes.statusCode).toBe(200);
-      const body = JSON.parse(callbackRes.body);
-      expect(body.apiKey).toBeDefined();
-      expect(body.apiKey).toMatch(/^sk_/);
-      expect(body.customerId).toBeDefined();
-      expect(body.message).toContain('Authorization: Bearer');
+      expect(callbackRes.headers['content-type']).toContain('text/html');
+      expect(callbackRes.body).toContain('Subscription Active');
+      const apiKey = callbackRes.body.match(/>(sk_[^<]+)</)?.[1];
+      expect(apiKey).toBeDefined();
+      expect(apiKey).toMatch(/^sk_/);
+      expect(callbackRes.body).toContain('Authorization: Bearer');
     });
 
     it('API key from checkout works for page creation', async () => {
@@ -607,7 +608,7 @@ describe('peekmd API', () => {
         method: 'GET',
         url: `/api/stripe/callback?session_id=${sessionId}`,
       });
-      const { apiKey } = JSON.parse(callbackRes.body);
+      const apiKey = callbackRes.body.match(/>(sk_[^<]+)</)?.[1]!;
 
       // Use the API key to create a page with extended TTL
       const createRes = await server.inject({

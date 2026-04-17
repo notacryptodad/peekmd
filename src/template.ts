@@ -795,6 +795,79 @@ document.getElementById('demo-btn').addEventListener('click', function() {
 </html>`;
 }
 
+export function checkoutSuccessTemplate(opts: { apiKey: string; baseUrl: string }): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>peekmd - subscription active</title>
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: #1a1a2e; color: #94a3b8; margin: 0; padding: 20px;
+  box-sizing: border-box;
+}
+.card {
+  background: #16213e; border-radius: 12px; padding: 40px; max-width: 560px;
+  width: 100%; text-align: center; border: 1px solid #334155;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin: 0 0 8px; }
+.subtitle { color: #e2e8f0; font-size: 1.1em; margin-bottom: 24px; }
+.key-label { color: #94a3b8; font-size: 0.9em; margin-bottom: 8px; }
+.key-box {
+  background: #11111b; border: 1px solid #334155; border-radius: 8px;
+  padding: 14px 18px; font-family: 'SF Mono', Monaco, monospace; font-size: 0.85em;
+  color: #60a5fa; word-break: break-all; cursor: pointer; position: relative;
+  transition: border-color 0.2s;
+}
+.key-box:hover { border-color: #60a5fa; }
+.key-box::after {
+  content: 'click to copy'; position: absolute; top: -20px; right: 8px;
+  font-size: 0.7em; color: #64748b; font-family: sans-serif;
+}
+.copied::after { content: 'copied!'; color: #60a5fa; }
+.usage { text-align: left; margin-top: 24px; background: #11111b; border-radius: 8px; padding: 16px 18px; }
+.usage h3 { color: #e2e8f0; margin: 0 0 8px; font-size: 0.95em; }
+.usage code { background: #1a1a2e; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; color: #60a5fa; }
+.usage pre {
+  background: #1a1a2e; border-radius: 6px; padding: 12px; overflow-x: auto;
+  font-size: 0.82em; color: #e2e8f0; margin: 8px 0 0;
+}
+.links { margin-top: 20px; }
+.links a {
+  color: #60a5fa; text-decoration: none; margin: 0 12px; font-size: 0.9em;
+}
+.links a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Subscription Active</h1>
+  <p class="subtitle">Your peekmd subscription is now active.</p>
+
+  <p class="key-label">Your API key:</p>
+  <div class="key-box" id="api-key" onclick="navigator.clipboard.writeText(this.textContent.trim());this.classList.add('copied');setTimeout(()=>this.classList.remove('copied'),2000)">${opts.apiKey}</div>
+
+  <div class="usage">
+    <h3>How to use</h3>
+    <p>Pass your API key as a Bearer token on all requests:</p>
+    <pre>curl -X POST ${opts.baseUrl}/api/create \\
+  -H "Authorization: Bearer ${opts.apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"markdown": "# Hello", "ttl": 86400}'</pre>
+  </div>
+
+  <div class="links">
+    <a href="${opts.baseUrl}">Home</a>
+    <a href="${opts.baseUrl}/api/pricing">Pricing</a>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
 export function notFoundTemplate(): string {
   return `<!DOCTYPE html>
 <html lang="en">

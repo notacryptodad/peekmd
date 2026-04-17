@@ -6,7 +6,7 @@
 import { nanoid } from 'nanoid';
 import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-worker.js';
-import { pageTemplate, notFoundTemplate, landingTemplate } from './template.js';
+import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
@@ -406,14 +406,7 @@ export default {
       if (!sessionId) return json({ error: 'Missing session_id parameter' }, 400);
       try {
         const result = await stripe.handleCheckoutCallback(sessionId);
-        return json({
-          apiKey: result.apiKey,
-          customerId: result.customerId,
-          message:
-            'Subscription active. Use this API key as Authorization: Bearer ' +
-            result.apiKey +
-            ' on all requests to bypass the free tier limits and ad banner.',
-        });
+        return html(checkoutSuccessTemplate({ apiKey: result.apiKey, baseUrl }));
       } catch (err) {
         return json({ error: 'callback_failed', message: (err as Error).message }, 400);
       }
