@@ -13,6 +13,14 @@ export interface ApiKeyRecord {
   stripeCustomerId: string;
 }
 
+/** Common interface for API key storage backends. */
+export interface ApiKeyStore {
+  validate(key: string): ApiKeyRecord | undefined | Promise<ApiKeyRecord | undefined>;
+  add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan): void | Promise<void>;
+  getPlan(customerId: string): SubscriptionPlan | undefined | Promise<SubscriptionPlan | undefined>;
+  setPlan(customerId: string, plan: SubscriptionPlan): void | Promise<void>;
+}
+
 export interface BillingStatus {
   customerId: string;
   plan: string | null;
@@ -40,6 +48,8 @@ export interface CheckoutResult {
 export interface CheckoutCallbackResult {
   apiKey: string;
   customerId: string;
+  email?: string;
+  plan?: SubscriptionPlan;
 }
 
 export interface PortalSessionResult {
@@ -85,7 +95,7 @@ export function getBillingPeriod(now = new Date()): { key: string; start: Date; 
  * In-memory API key store. Seeded from a config string.
  * Format: "sk_test_abc:cus_xxx,sk_test_def:cus_yyy"
  */
-export class InMemoryApiKeyStore {
+export class InMemoryApiKeyStore implements ApiKeyStore {
   private keys = new Map<string, ApiKeyRecord>();
   private customerPlans = new Map<string, SubscriptionPlan>();
 
@@ -128,13 +138,86 @@ export class InMemoryApiKeyStore {
   }
 }
 
+/** KV record stored under `apikey:{sk_...}` */
+export interface KVApiKeyRecord {
+  stripeCustomerId: string;
+  plan?: SubscriptionPlan;
+  email?: string;
+  createdAt: string;
+}
+
+/**
+ * KV-backed API key store for Cloudflare Workers.
+ * Uses the same PAGES KV namespace with `apikey:` prefix.
+ */
+export class KVApiKeyStore implements ApiKeyStore {
+  /** Cache customer→plan from the most recent validate() call. */
+  private planCache = new Map<string, SubscriptionPlan>();
+
+  constructor(private kv: { get(key: string, options?: { type?: string }): Promise<string | null>; put(key: string, value: string): Promise<void> }) {}
+
+  private kvKey(apiKey: string): string {
+    return `apikey:${apiKey}`;
+  }
+
+  async validate(key: string): Promise<ApiKeyRecord | undefined> {
+    const raw = await this.kv.get(this.kvKey(key), { type: 'text' });
+    if (!raw) return undefined;
+    const record: KVApiKeyRecord = JSON.parse(raw);
+    // Cache plan so getPlan() works after validate()
+    if (record.plan) {
+      this.planCache.set(record.stripeCustomerId, record.plan);
+    }
+    return { key, stripeCustomerId: record.stripeCustomerId };
+  }
+
+  async add(key: string, stripeCustomerId: string, plan?: SubscriptionPlan): Promise<void> {
+    const record: KVApiKeyRecord = {
+      stripeCustomerId,
+      plan,
+      createdAt: new Date().toISOString(),
+    };
+    await this.kv.put(this.kvKey(key), JSON.stringify(record));
+    if (plan) {
+      this.planCache.set(stripeCustomerId, plan);
+    }
+  }
+
+  async getPlan(customerId: string): Promise<SubscriptionPlan | undefined> {
+    return this.planCache.get(customerId);
+  }
+
+  async setPlan(customerId: string, plan: SubscriptionPlan): Promise<void> {
+    this.planCache.set(customerId, plan);
+    // Note: this only updates the in-memory cache. Full KV persistence of
+    // plan changes (e.g., from webhooks) requires a customer→key index,
+    // which will be addressed in PEE-31 (key rotation/recovery).
+  }
+
+  /** Direct record lookup for plan retrieval during page creation. */
+  async getRecordByKey(apiKey: string): Promise<KVApiKeyRecord | undefined> {
+    const raw = await this.kv.get(this.kvKey(apiKey), { type: 'text' });
+    if (!raw) return undefined;
+    return JSON.parse(raw);
+  }
+
+  /** Update a record (e.g., to set email after checkout). */
+  async updateRecord(apiKey: string, updates: Partial<KVApiKeyRecord>): Promise<void> {
+    const raw = await this.kv.get(this.kvKey(apiKey), { type: 'text' });
+    if (!raw) return;
+    const record: KVApiKeyRecord = JSON.parse(raw);
+    Object.assign(record, updates);
+    await this.kv.put(this.kvKey(apiKey), JSON.stringify(record));
+  }
+}
+
 /**
  * Live Stripe integration.
  * Handles checkout sessions, usage reporting, and API key management.
  */
 export class StripeClient implements StripeService {
   private stripe: Stripe;
-  private keyStore: InMemoryApiKeyStore;
+  private keyStore: ApiKeyStore;
   private meterEventName: string;
   private priceId: string | undefined;
   private planPriceIds: Partial<Record<SubscriptionPlan, string>>;
@@ -142,7 +225,7 @@ export class StripeClient implements StripeService {
 
   constructor(opts: {
     secretKey: string;
-    keyStore: InMemoryApiKeyStore;
+    keyStore: ApiKeyStore;
     meterEventName?: string;
     priceId?: string;
     planPriceIds?: Partial<Record<SubscriptionPlan, string>>;
@@ -179,14 +262,14 @@ export class StripeClient implements StripeService {
   }
 
   async checkQuota(customerId: string): Promise<QuotaCheck> {
-    const plan = this.keyStore.getPlan(customerId) ?? 'basic';
+    const plan = (await this.keyStore.getPlan(customerId)) ?? 'basic';
     const quotaLimit = SUBSCRIPTION_PLANS[plan].pagesPerMonth;
     // In live Stripe, we'd query meter usage. For now, return allowed.
     return { allowed: true, pagesUsed: 0, quotaLimit, remaining: quotaLimit };
   }
 
   async getBillingStatus(customerId: string): Promise<BillingStatus> {
-    const plan = this.keyStore.getPlan(customerId) ?? 'basic';
+    const plan = (await this.keyStore.getPlan(customerId)) ?? 'basic';
     const quotaLimit = SUBSCRIPTION_PLANS[plan].pagesPerMonth;
     const { start, end } = getBillingPeriod();
     // In live Stripe, we'd query meter usage for the current period.
@@ -219,7 +302,9 @@ export class StripeClient implements StripeService {
   }
 
   async handleCheckoutCallback(sessionId: string): Promise<CheckoutCallbackResult> {
-    const session = await this.stripe.checkout.sessions.retrieve(sessionId);
+    const session = await this.stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['line_items', 'line_items.data.price'],
+    });
     if (session.payment_status !== 'paid' && session.status !== 'complete') {
       throw new Error('Checkout session not completed');
     }
@@ -227,9 +312,18 @@ export class StripeClient implements StripeService {
     if (!customerId) {
       throw new Error('No customer associated with checkout session');
     }
+    const email = session.customer_details?.email ?? undefined;
+
+    // Resolve plan from the checkout session's line item price
+    const priceId = session.line_items?.data?.[0]?.price?.id;
+    let plan: SubscriptionPlan | undefined;
+    if (priceId) {
+      plan = this.resolvePlanFromPriceId(priceId);
+    }
+
     const apiKey = generateApiKey();
-    this.keyStore.add(apiKey, customerId);
-    return { apiKey, customerId };
+    await this.keyStore.add(apiKey, customerId, plan);
+    return { apiKey, customerId, email, plan };
   }
 
   async createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult> {
@@ -253,7 +347,7 @@ export class StripeClient implements StripeService {
     return this.processWebhookEvent(event);
   }
 
-  private processWebhookEvent(event: Stripe.Event): WebhookResult {
+  private async processWebhookEvent(event: Stripe.Event): Promise<WebhookResult> {
     const customerId = (event.data.object as { customer?: string }).customer ?? undefined;
 
     switch (event.type) {
@@ -265,7 +359,7 @@ export class StripeClient implements StripeService {
         if (priceId) {
           const plan = this.resolvePlanFromPriceId(priceId);
           if (plan) {
-            this.keyStore.setPlan(cid, plan);
+            await this.keyStore.setPlan(cid, plan);
           }
         }
         return { received: true, eventType: event.type, customerId: cid };
@@ -274,7 +368,7 @@ export class StripeClient implements StripeService {
         const sub = event.data.object as Stripe.Subscription;
         const cid = typeof sub.customer === 'string' ? sub.customer : sub.customer.toString();
         // Downgrade to basic on cancellation
-        this.keyStore.setPlan(cid, 'basic');
+        await this.keyStore.setPlan(cid, 'basic');
         return { received: true, eventType: event.type, customerId: cid };
       }
       case 'invoice.payment_failed': {
@@ -383,9 +477,9 @@ export class MockStripeService implements StripeService {
       throw new Error('Invalid or expired checkout session');
     }
     const apiKey = generateApiKey();
-    this.keyStore.add(apiKey, session.customerId, session.plan);
+    await this.keyStore.add(apiKey, session.customerId, session.plan);
     this.checkoutSessions.delete(sessionId);
-    return { apiKey, customerId: session.customerId };
+    return { apiKey, customerId: session.customerId, email: 'test@example.com', plan: session.plan };
   }
 
   async createPortalSession(customerId: string, returnUrl: string): Promise<PortalSessionResult> {

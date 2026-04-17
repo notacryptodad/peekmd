@@ -16,11 +16,17 @@ import { DEMO_MARKDOWN } from './demo.js';
 import { ogImageSvg } from './og-image.js';
 import { MemoryRateLimiter, rateLimitResponse } from './rate-limit.js';
 import type { RateLimiter } from './rate-limit.js';
+import { sendApiKeyEmail } from './email.js';
 
 const MAX_MARKDOWN_BYTES = 512_000; // 500 KB
 const SLUG_LENGTH = 8;
 
 export { MAX_MARKDOWN_BYTES, SLUG_LENGTH };
+
+export interface ResendConfig {
+  apiKey: string;
+  fromEmail: string;
+}
 
 export interface AppOptions {
   baseUrl?: string;
@@ -28,6 +34,7 @@ export interface AppOptions {
   stripe?: StripeService;
   x402?: Partial<X402Config>;
   rateLimiter?: RateLimiter;
+  resend?: ResendConfig;
 }
 
 /**
@@ -82,6 +89,7 @@ export function buildApp(opts?: AppOptions) {
   const stripe = opts?.stripe ?? new MockStripeService();
   const x402Config = opts?.x402 ?? {};
   const rateLimiter = opts?.rateLimiter ?? new MemoryRateLimiter();
+  const resendConfig = opts?.resend;
 
   const app = Fastify({ logger: false });
 
@@ -329,6 +337,17 @@ export function buildApp(opts?: AppOptions) {
     }
     try {
       const result = await stripe.handleCheckoutCallback(sessionId);
+      // Send API key email in the background (non-blocking)
+      if (result.email && resendConfig) {
+        sendApiKeyEmail({
+          resendApiKey: resendConfig.apiKey,
+          from: resendConfig.fromEmail,
+          to: result.email,
+          apiKey: result.apiKey,
+          plan: result.plan,
+          baseUrl,
+        }).catch(() => {}); // fire-and-forget
+      }
       return reply.type('text/html').send(checkoutSuccessTemplate({ apiKey: result.apiKey, baseUrl }));
     } catch (err) {
       return reply.status(400).send({
@@ -472,7 +491,12 @@ if (isMain) {
     assetAddress: process.env.X402_ASSET_ADDRESS,
   };
 
-  const app = buildApp({ baseUrl: BASE_URL, store: memStore, stripe: stripeService, x402: x402Config });
+  // Resend config
+  const resendConfig = process.env.RESEND_API_KEY
+    ? { apiKey: process.env.RESEND_API_KEY, fromEmail: process.env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>' }
+    : undefined;
+
+  const app = buildApp({ baseUrl: BASE_URL, store: memStore, stripe: stripeService, x402: x402Config, resend: resendConfig });
   app.listen({ port: PORT, host: HOST }, (err, address) => {
     if (err) {
       console.error(err);

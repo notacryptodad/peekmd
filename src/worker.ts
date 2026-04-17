@@ -12,8 +12,9 @@ import type { PageStore } from './types.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 import type { SubscriptionPlan } from './tiers.js';
 import type { ApiKeyRecord } from './stripe.js';
-import { InMemoryApiKeyStore, MockStripeService, StripeClient } from './stripe.js';
+import { KVApiKeyStore, InMemoryApiKeyStore, MockStripeService, StripeClient } from './stripe.js';
 import type { StripeService } from './stripe.js';
+import { sendApiKeyEmail } from './email.js';
 import { buildPaymentRequired, verifyPayment, isX402Configured } from './x402.js';
 import type { X402Config } from './x402.js';
 import { DEMO_MARKDOWN } from './demo.js';
@@ -32,6 +33,8 @@ interface Env {
   STRIPE_BASIC_PRICE_ID?: string;
   STRIPE_PRO_PRICE_ID?: string;
   STRIPE_WEBHOOK_SECRET?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
   X402_WALLET_ADDRESS?: string;
   X402_NETWORK?: string;
   X402_FACILITATOR_URL?: string;
@@ -61,11 +64,12 @@ function html(body: string, status = 200): Response {
 }
 
 function getStripeService(env: Env): StripeService {
-  const apiKeyStore = new InMemoryApiKeyStore(env.STRIPE_API_KEYS);
+  // Use KV-backed store for persistent API key storage
+  const kvApiKeyStore = new KVApiKeyStore(env.PAGES);
   if (env.STRIPE_SECRET_KEY) {
     return new StripeClient({
       secretKey: env.STRIPE_SECRET_KEY,
-      keyStore: apiKeyStore,
+      keyStore: kvApiKeyStore,
       priceId: env.STRIPE_PRICE_ID,
       planPriceIds: {
         basic: env.STRIPE_BASIC_PRICE_ID,
@@ -74,7 +78,9 @@ function getStripeService(env: Env): StripeService {
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
     });
   }
-  return new MockStripeService(apiKeyStore);
+  // Fallback: in-memory store for dev/mock mode (seed from env if available)
+  const memStore = new InMemoryApiKeyStore(env.STRIPE_API_KEYS);
+  return new MockStripeService(memStore);
 }
 
 function getX402Config(env: Env): Partial<X402Config> {
@@ -406,6 +412,17 @@ export default {
       if (!sessionId) return json({ error: 'Missing session_id parameter' }, 400);
       try {
         const result = await stripe.handleCheckoutCallback(sessionId);
+        // Send API key email in the background (non-blocking)
+        if (result.email && env.RESEND_API_KEY) {
+          sendApiKeyEmail({
+            resendApiKey: env.RESEND_API_KEY,
+            from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
+            to: result.email,
+            apiKey: result.apiKey,
+            plan: result.plan,
+            baseUrl,
+          }).catch(() => {}); // fire-and-forget
+        }
         return html(checkoutSuccessTemplate({ apiKey: result.apiKey, baseUrl }));
       } catch (err) {
         return json({ error: 'callback_failed', message: (err as Error).message }, 400);
