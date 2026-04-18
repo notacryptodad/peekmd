@@ -6,7 +6,7 @@
 import { nanoid } from 'nanoid';
 import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-worker.js';
-import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate, keyManagementTemplate } from './template.js';
+import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate, keyManagementTemplate, challengeTemplate, challengeCreateTemplate, challengeListTemplate } from './template.js';
 import { KVStore, type KVNamespace } from './kv-store.js';
 import type { PageStore } from './types.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
@@ -141,14 +141,14 @@ async function handleCreate(
   x402Config: Partial<X402Config>,
   rateLimiter: KVRateLimiter,
 ): Promise<Response> {
-  let body: { markdown?: string; ttl?: number };
+  let body: { markdown?: string; ttl?: number; challenge?: boolean };
   try {
     body = await request.json();
   } catch {
     return json({ error: 'invalid JSON body' }, 400);
   }
 
-  const { markdown, ttl } = body;
+  const { markdown, ttl, challenge } = body;
 
   if (typeof markdown !== 'string' || markdown.trim().length === 0) {
     return json({ error: 'markdown is required and must be a non-empty string' }, 400);
@@ -248,11 +248,20 @@ async function handleCreate(
 
   await store.set({ slug, html: renderedHtml, markdown, createdAt: now, expiresAt, tier });
 
+  if (challenge && tier !== 'free' && store instanceof KVStore) {
+    await store.setChallenge(slug, { keeperCount: 0, viewCount: 0, extendSec: ttlSec || 300, createdAt: now });
+    await store.addChallengeToIndex(slug);
+  }
+
   const url = `${baseUrl}/${slug}`;
-  return json({ url, slug, expiresAt: expiresAt === 0 ? null : new Date(expiresAt).toISOString(), tier }, 201);
+  return json({ url, slug, expiresAt: expiresAt === 0 ? null : new Date(expiresAt).toISOString(), tier, challenge: !!(challenge && tier !== 'free') }, 201);
 }
 
 async function handleBurn(slug: string, store: PageStore): Promise<Response> {
+  if (store instanceof KVStore) {
+    const challenge = await store.getChallenge(slug);
+    if (challenge) return json({ error: 'challenge pages cannot be burned' }, 403);
+  }
   const burned = await store.burn(slug);
   if (!burned) {
     return json({ error: 'page not found' }, 404);
@@ -260,10 +269,31 @@ async function handleBurn(slug: string, store: PageStore): Promise<Response> {
   return json({ ok: true });
 }
 
-async function handleGet(slug: string, store: PageStore, baseUrl: string): Promise<Response> {
+async function handleGet(slug: string, store: PageStore, baseUrl: string, request?: Request): Promise<Response> {
   const page = await store.get(slug);
   if (!page) {
     return html(notFoundTemplate(), 404);
+  }
+
+  // Challenge page logic
+  if (store instanceof KVStore) {
+    const challenge = await store.getChallenge(slug);
+    if (challenge) {
+      const ip = request?.headers.get('cf-connecting-ip') ?? request?.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '0.0.0.0';
+      const { meta } = await store.challengeVisit(slug, ip);
+      // Re-read page to get updated expiresAt
+      const updated = await store.get(slug);
+      return html(challengeTemplate({
+        html: page.html,
+        slug: page.slug,
+        expiresAt: updated?.expiresAt ?? page.expiresAt,
+        baseUrl,
+        keeperCount: meta.keeperCount,
+        viewCount: meta.viewCount,
+        createdAt: meta.createdAt,
+        extendSec: meta.extendSec,
+      }));
+    }
   }
 
   const tier = page.tier ?? 'free';
@@ -345,6 +375,15 @@ export default {
 
     if (url.pathname === '/api/pricing' && request.method === 'GET') {
       return handlePricing(baseUrl, x402Config);
+    }
+
+    if (url.pathname === '/challenges' && request.method === 'GET') {
+      const challenges = await store.listChallenges();
+      return html(challengeListTemplate({ challenges, baseUrl }));
+    }
+
+    if (url.pathname === '/challenge' && request.method === 'GET') {
+      return html(challengeCreateTemplate({ baseUrl }));
     }
 
     if (url.pathname === '/api/create' && request.method === 'POST') {
@@ -432,6 +471,15 @@ export default {
     const burnMatch = url.pathname.match(/^\/api\/burn\/([^/]+)$/);
     if (burnMatch && request.method === 'POST') {
       return handleBurn(burnMatch[1], store);
+    }
+
+    const challengeStatsMatch = url.pathname.match(/^\/api\/challenge\/([^/]+)$/);
+    if (challengeStatsMatch && request.method === 'GET') {
+      const slug = challengeStatsMatch[1];
+      const meta = await store.getChallenge(slug);
+      if (!meta) return json({ error: 'not a challenge page' }, 404);
+      const page = await store.get(slug);
+      return json({ keeperCount: meta.keeperCount, viewCount: meta.viewCount, expiresAt: page?.expiresAt ?? 0 });
     }
 
     // Stripe Customer Portal
@@ -572,7 +620,7 @@ export default {
 
     const slugMatch = url.pathname.match(/^\/([^/]+)$/);
     if (slugMatch && request.method === 'GET') {
-      return handleGet(slugMatch[1], store, baseUrl);
+      return handleGet(slugMatch[1], store, baseUrl, request);
     }
 
     return json({ error: 'not found' }, 404);

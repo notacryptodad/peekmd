@@ -410,6 +410,421 @@ ${showAdBanner ? `
 </html>`;
 }
 
+export function challengeTemplate(opts: {
+  html: string;
+  slug: string;
+  expiresAt: number;
+  baseUrl: string;
+  keeperCount: number;
+  viewCount: number;
+  createdAt: number;
+  extendSec: number;
+}): string {
+  const { html, slug, expiresAt, baseUrl, keeperCount, viewCount, createdAt, extendSec } = opts;
+  const ttlLabel = extendSec >= 3600 ? Math.floor(extendSec / 3600) + 'h' : Math.floor(extendSec / 60) + 'm';
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>🔥 Keep Alive Challenge — peekmd</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --bg: #ffffff; --fg: #1a1a2e; --fg-muted: #6c7086; --border: #e0e0e0; --link: #1e90ff; --table-stripe: #f5f5f5; }
+[data-theme="dark"] { --bg: #1e1e2e; --fg: #cdd6f4; --fg-muted: #6c7086; --border: #313244; --link: #89b4fa; --table-stripe: #181825; }
+html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+.topbar { position: sticky; top: 0; z-index: 100; display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 13px; }
+.topbar-left { display: flex; align-items: center; gap: 16px; }
+.brand { font-weight: 700; font-size: 16px; }
+.countdown { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--link); }
+.progress-bar { width: 80px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: var(--link); transition: width 0.3s; }
+.btn { background: none; border: 1px solid var(--border); color: var(--fg); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.challenge-banner { text-align: center; padding: 24px; background: linear-gradient(135deg, #f97316, #ef4444); color: white; }
+.challenge-banner h2 { font-size: 1.4em; margin-bottom: 8px; }
+.challenge-stats { display: flex; justify-content: center; gap: 32px; margin-top: 12px; font-size: 0.95em; }
+.challenge-stats .stat { text-align: center; }
+.challenge-stats .stat-value { font-size: 1.8em; font-weight: 800; display: block; }
+.challenge-stats .stat-label { font-size: 0.75em; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; }
+.challenge-share { margin-top: 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.challenge-share a, .challenge-share button { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; text-decoration: none; }
+.challenge-share a:hover, .challenge-share button:hover { background: rgba(255,255,255,0.35); }
+.challenge-share svg { width: 18px; height: 18px; fill: currentColor; }
+.content { max-width: 800px; margin: 0 auto; padding: 32px 24px 60px; line-height: 1.7; }
+.content h1, .content h2, .content h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
+.content p { margin-bottom: 1em; }
+.content pre { background: var(--table-stripe); padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; }
+.content code { font-family: 'SF Mono', Consolas, monospace; font-size: 0.9em; }
+.content a { color: var(--link); }
+.content table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+.content th, .content td { padding: 8px 12px; border: 1px solid var(--border); text-align: left; }
+.content tr:nth-child(even) { background: var(--table-stripe); }
+@media (max-width: 480px) {
+  .challenge-stats { gap: 16px; }
+  .challenge-stats .stat-value { font-size: 1.4em; }
+  .content { padding: 24px 16px 60px; }
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="brand">peekmd</span>
+    <span class="countdown" id="countdown">--:--</span>
+    <div class="progress-bar"><div class="progress-bar-fill" id="progress"></div></div>
+  </div>
+  <div class="topbar-right">
+    <button class="btn" id="theme-toggle" title="Toggle theme">dark</button>
+  </div>
+</div>
+<div class="challenge-banner">
+  <h2>🔥 Keep Alive Challenge</h2>
+  <p>Each unique visitor adds <strong>${ttlLabel}</strong> to this page's life. Share the link!</p>
+  <div class="challenge-stats">
+    <div class="stat"><span class="stat-value">${keeperCount}</span><span class="stat-label">Keepers</span></div>
+    <div class="stat"><span class="stat-value">${viewCount}</span><span class="stat-label">Views</span></div>
+    <div class="stat"><span class="stat-value">+${ttlLabel}</span><span class="stat-label">Per Visit</span></div>
+    <div class="stat"><span class="stat-value" id="created-ago"></span><span class="stat-label">Created</span></div>
+  </div>
+  <div class="challenge-share" id="share-btns">
+    <a id="share-x" target="_blank" rel="noopener" title="Share on X"><svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>X</a>
+    <a id="share-threads" target="_blank" rel="noopener" title="Share on Threads"><svg viewBox="0 0 24 24"><path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.59 12c.025 3.086.718 5.496 2.057 7.164 1.432 1.781 3.632 2.695 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.343-.783-.99-1.42-1.834-1.856.026-.327.037-.663.03-1.007-.03-1.49-.332-2.755-.899-3.763-.546-.97-1.33-1.696-2.332-2.159-1.06-.49-2.32-.737-3.746-.737-2.07 0-3.706.553-4.864 1.643-1.2 1.13-1.835 2.726-1.889 4.744l2.119.037c.04-1.468.47-2.573 1.279-3.283.78-.685 1.9-1.022 3.355-1.022 1.1 0 2.05.18 2.828.535.7.32 1.23.78 1.575 1.368.36.614.56 1.432.583 2.584-1.14-.175-2.35-.237-3.6-.183-1.69.073-3.15.46-4.342 1.15-1.28.74-2.17 1.8-2.648 3.148-.24.678-.36 1.395-.36 2.14 0 1.573.614 2.95 1.728 3.872 1.072.886 2.48 1.335 4.188 1.335 1.678 0 3.148-.467 4.365-1.388 1.04-.787 1.79-1.848 2.236-3.16.61.653.96 1.47 1.072 2.464.18 1.606-.36 3.2-1.567 4.624C18.07 22.88 15.636 23.98 12.186 24zm.088-5.412c-1.2 0-2.148-.32-2.822-.953-.627-.588-.944-1.37-.944-2.326 0-.442.068-.86.203-1.24.31-.876.95-1.573 1.903-2.073.88-.462 2.026-.71 3.41-.737 1.19-.027 2.34.04 3.43.2-.09 1.645-.527 2.97-1.3 3.94-.87 1.09-2.1 1.643-3.66 1.643-.073 0-.147-.002-.22-.006z"/></svg>Threads</a>
+    <a id="share-fb" target="_blank" rel="noopener" title="Share on Facebook"><svg viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>Facebook</a>
+    <button onclick="navigator.clipboard.writeText(window.location.href).then(function(){this.textContent='✓ Copied'}.bind(this))" title="Copy link">📋 Copy</button>
+  </div>
+</div>
+<div class="content">${html}</div>
+<script>
+(function() {
+  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var saved = localStorage.getItem('peekmd-theme');
+  var theme = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  var toggleBtn = document.getElementById('theme-toggle');
+  toggleBtn.textContent = theme === 'dark' ? 'light' : 'dark';
+  toggleBtn.addEventListener('click', function() {
+    var current = document.documentElement.getAttribute('data-theme');
+    var next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    toggleBtn.textContent = next === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('peekmd-theme', next);
+  });
+
+  // Share URLs
+  var url = encodeURIComponent(window.location.href);
+  var text = encodeURIComponent('🔥 Can you help keep this page alive? Every visit extends its life!');
+  document.getElementById('share-x').href = 'https://x.com/intent/tweet?text=' + text + '&url=' + url;
+  document.getElementById('share-threads').href = 'https://threads.net/intent/post?text=' + text + ' ' + url;
+  document.getElementById('share-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + url;
+
+  // Created ago
+  var created = ${createdAt};
+  function ago() {
+    var d = Date.now() - created;
+    var s = Math.floor(d/1000), m = Math.floor(s/60), h = Math.floor(m/60), dy = Math.floor(h/24);
+    if (dy > 0) return dy + 'd ' + (h%24) + 'h';
+    if (h > 0) return h + 'h ' + (m%60) + 'm';
+    if (m > 0) return m + 'm';
+    return s + 's';
+  }
+  var agoEl = document.getElementById('created-ago');
+  function updateAgo() { agoEl.textContent = ago(); }
+  updateAgo();
+  setInterval(updateAgo, 60000);
+
+  // Countdown
+  var expiresAt = ${expiresAt};
+  var countdownEl = document.getElementById('countdown');
+  var progressEl = document.getElementById('progress');
+  var totalDuration = expiresAt > 0 ? expiresAt - Date.now() : 0;
+  if (expiresAt === 0) {
+    countdownEl.textContent = 'permanent';
+    progressEl.style.width = '100%';
+  } else {
+    function updateCountdown() {
+      var remaining = expiresAt - Date.now();
+      if (remaining <= 0) { countdownEl.textContent = 'expired'; progressEl.style.width = '0%'; return; }
+      progressEl.style.width = Math.max(0, (remaining / totalDuration) * 100) + '%';
+      var secs = Math.floor(remaining/1000), mins = Math.floor(secs/60), hrs = Math.floor(mins/60);
+      secs %= 60; mins %= 60;
+      countdownEl.textContent = hrs > 0 ? hrs+'h '+mins+'m '+secs+'s' : mins > 0 ? mins+'m '+secs+'s' : secs+'s';
+      requestAnimationFrame(updateCountdown);
+    }
+    updateCountdown();
+  }
+
+  // Live poll for challenge stats
+  var keeperEl = document.querySelectorAll('.stat-value')[0];
+  var viewEl = document.querySelectorAll('.stat-value')[1];
+  setInterval(function() {
+    fetch('${baseUrl}/api/challenge/${slug}')
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d) return;
+        keeperEl.textContent = d.keeperCount;
+        viewEl.textContent = d.viewCount;
+        if (d.expiresAt > 0 && d.expiresAt !== expiresAt) {
+          expiresAt = d.expiresAt;
+          totalDuration = expiresAt - Date.now();
+        }
+      })
+      .catch(function() {});
+  }, 15000);
+})();
+</script>
+</body>
+</html>`;
+}
+
+export function challengeCreateTemplate(opts: { baseUrl: string }): string {
+  const { baseUrl } = opts;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🔥 Create a Challenge — peekmd</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --bg: #ffffff; --fg: #1a1a2e; --fg-muted: #6c7086; --border: #e0e0e0; --link: #1e90ff; --table-stripe: #f5f5f5; --accent: #f97316; }
+[data-theme="dark"] { --bg: #1e1e2e; --fg: #cdd6f4; --fg-muted: #6c7086; --border: #313244; --link: #89b4fa; --table-stripe: #181825; --accent: #fab387; }
+html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+body { max-width: 700px; margin: 0 auto; padding: 32px 24px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--fg); }
+.btn { background: none; border: 1px solid var(--border); color: var(--fg); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+h1 { font-size: 1.6em; margin-bottom: 8px; }
+.subtitle { color: var(--fg-muted); margin-bottom: 24px; }
+label { display: block; font-weight: 600; margin-bottom: 6px; margin-top: 16px; }
+textarea { width: 100%; min-height: 200px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--table-stripe); color: var(--fg); font-family: 'SF Mono', Consolas, monospace; font-size: 14px; resize: vertical; }
+select, input[type="text"] { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--table-stripe); color: var(--fg); font-size: 14px; }
+.form-row { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }
+.create-btn { margin-top: 24px; padding: 12px 32px; background: linear-gradient(135deg, #f97316, #ef4444); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; }
+.create-btn:hover { opacity: 0.9; }
+.create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.result { margin-top: 24px; padding: 20px; border: 2px solid var(--accent); border-radius: 8px; display: none; }
+.result h3 { margin-bottom: 8px; }
+.result a { color: var(--link); word-break: break-all; }
+.result .share-row { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.result .share-row a, .result .share-row button { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; text-decoration: none; color: var(--fg); background: var(--table-stripe); cursor: pointer; }
+.error { margin-top: 16px; padding: 12px; background: #fef2f2; color: #dc2626; border-radius: 8px; display: none; }
+[data-theme="dark"] .error { background: #2d1b1b; color: #fca5a5; }
+.api-key-field { width: 100%; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="${baseUrl}/">peekmd</a>
+  <button class="btn" id="theme-toggle">dark</button>
+</div>
+<h1>🔥 Create a Challenge</h1>
+<p class="subtitle">Write your content in markdown. Visitors will keep your page alive by visiting it!</p>
+
+<label for="api-key">API Key</label>
+<input type="text" id="api-key" class="api-key-field" placeholder="sk_..." />
+
+<label for="markdown">Content (Markdown)</label>
+<textarea id="markdown" placeholder="# My Challenge Page\n\nShare this page and keep it alive!"></textarea>
+
+<div class="form-row">
+  <div>
+    <label for="ttl">Initial TTL</label>
+    <select id="ttl">
+      <option value="300">5 minutes</option>
+      <option value="600">10 minutes</option>
+      <option value="1800" selected>30 minutes</option>
+      <option value="3600">1 hour</option>
+    </select>
+  </div>
+</div>
+
+<button class="create-btn" id="create-btn">🔥 Create Challenge</button>
+<div class="error" id="error"></div>
+<div class="result" id="result">
+  <h3>🎉 Challenge created!</h3>
+  <p>Share this link: <a id="result-link" href="#" target="_blank"></a></p>
+  <p style="color:var(--fg-muted);font-size:13px;margin-top:4px;">Every unique visitor extends the page's life. See all challenges on the <a href="${baseUrl}/challenges">leaderboard</a>.</p>
+  <div class="share-row">
+    <a id="result-x" target="_blank" rel="noopener">𝕏 Post</a>
+    <a id="result-threads" target="_blank" rel="noopener">Threads</a>
+    <a id="result-fb" target="_blank" rel="noopener">Facebook</a>
+    <button id="result-copy">📋 Copy</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var saved = localStorage.getItem('peekmd-theme');
+  var theme = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  var toggleBtn = document.getElementById('theme-toggle');
+  toggleBtn.textContent = theme === 'dark' ? 'light' : 'dark';
+  toggleBtn.addEventListener('click', function() {
+    var c = document.documentElement.getAttribute('data-theme');
+    var n = c === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', n);
+    toggleBtn.textContent = n === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('peekmd-theme', n);
+  });
+
+  // Pre-fill API key from URL param
+  var params = new URLSearchParams(window.location.search);
+  var keyParam = params.get('key');
+  if (keyParam) document.getElementById('api-key').value = keyParam;
+
+  document.getElementById('create-btn').addEventListener('click', function() {
+    var btn = this;
+    var md = document.getElementById('markdown').value.trim();
+    var ttl = parseInt(document.getElementById('ttl').value);
+    var key = document.getElementById('api-key').value.trim();
+    var errEl = document.getElementById('error');
+    var resEl = document.getElementById('result');
+    errEl.style.display = 'none';
+    resEl.style.display = 'none';
+
+    if (!key) { errEl.textContent = 'API key is required.'; errEl.style.display = 'block'; return; }
+    if (!md) { errEl.textContent = 'Markdown content is required.'; errEl.style.display = 'block'; return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    fetch('${baseUrl}/api/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      body: JSON.stringify({ markdown: md, ttl: ttl, challenge: true })
+    })
+    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+    .then(function(res) {
+      btn.disabled = false;
+      btn.textContent = '🔥 Create Challenge';
+      if (!res.ok) {
+        errEl.textContent = res.data.message || res.data.error || 'Failed to create challenge.';
+        errEl.style.display = 'block';
+        return;
+      }
+      var url = res.data.url;
+      var link = document.getElementById('result-link');
+      link.href = url;
+      link.textContent = url;
+      var enc = encodeURIComponent(url);
+      var text = encodeURIComponent('🔥 Can you help keep this page alive? Every visit extends its life!');
+      document.getElementById('result-x').href = 'https://x.com/intent/tweet?text=' + text + '&url=' + enc;
+      document.getElementById('result-threads').href = 'https://threads.net/intent/post?text=' + text + ' ' + enc;
+      document.getElementById('result-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + enc;
+      document.getElementById('result-copy').onclick = function() {
+        navigator.clipboard.writeText(url).then(function() { this.textContent = '✓ Copied'; }.bind(this));
+      };
+      resEl.style.display = 'block';
+    })
+    .catch(function() {
+      btn.disabled = false;
+      btn.textContent = '🔥 Create Challenge';
+      errEl.textContent = 'Network error. Please try again.';
+      errEl.style.display = 'block';
+    });
+  });
+})();
+</script>
+</body>
+</html>`;
+}
+
+export function challengeListTemplate(opts: {
+  challenges: { slug: string; meta: { keeperCount: number; viewCount: number; createdAt: number; extendSec: number }; expiresAt: number }[];
+  baseUrl: string;
+}): string {
+  const { challenges, baseUrl } = opts;
+  const rows = challenges.map((c, i) => {
+    const ago = Date.now() - c.meta.createdAt;
+    const days = Math.floor(ago / 86_400_000);
+    const hours = Math.floor((ago % 86_400_000) / 3_600_000);
+    const ageStr = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+    const status = c.expiresAt === 0 ? 'permanent' : c.expiresAt > Date.now() ? '🟢 alive' : '💀 expired';
+    const ttl = c.meta.extendSec >= 3600 ? Math.floor(c.meta.extendSec / 3600) + 'h' : Math.floor(c.meta.extendSec / 60) + 'm';
+    return `<tr>
+      <td>${i + 1}</td>
+      <td><a href="${baseUrl}/${c.slug}">${c.slug}</a></td>
+      <td>+${ttl}</td>
+      <td><strong>${c.meta.keeperCount}</strong></td>
+      <td>${c.meta.viewCount}</td>
+      <td>${ageStr}</td>
+      <td>${status}</td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🔥 Challenge Leaderboard — peekmd</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root { --bg: #ffffff; --fg: #1a1a2e; --fg-muted: #6c7086; --border: #e0e0e0; --link: #1e90ff; --table-stripe: #f5f5f5; --accent: #f97316; }
+[data-theme="dark"] { --bg: #1e1e2e; --fg: #cdd6f4; --fg-muted: #6c7086; --border: #313244; --link: #89b4fa; --table-stripe: #181825; --accent: #fab387; }
+html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+body { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
+.header { text-align: center; margin-bottom: 32px; }
+.header h1 { font-size: 1.8em; margin-bottom: 8px; }
+.header p { color: var(--fg-muted); }
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--fg); }
+.btn { background: none; border: 1px solid var(--border); color: var(--fg); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+th { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); }
+tr:hover { background: var(--table-stripe); }
+td a { color: var(--link); text-decoration: none; font-family: 'SF Mono', Consolas, monospace; font-size: 0.9em; }
+td a:hover { text-decoration: underline; }
+td strong { color: var(--accent); font-size: 1.1em; }
+.empty { text-align: center; padding: 60px 24px; color: var(--fg-muted); }
+.empty p { margin-top: 12px; }
+@media (max-width: 480px) { th, td { padding: 8px 8px; font-size: 0.85em; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="${baseUrl}/">peekmd</a>
+  <button class="btn" id="theme-toggle">dark</button>
+</div>
+<div class="header">
+  <h1>🔥 Challenge Leaderboard</h1>
+  <p>Pages kept alive by the community. Visit a page to help keep it going!</p>
+</div>
+${challenges.length > 0 ? `
+<table>
+  <thead><tr><th>#</th><th>Page</th><th>Difficulty</th><th>Keepers</th><th>Views</th><th>Age</th><th>Status</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+` : `
+<div class="empty">
+  <p>🏜️ No active challenges yet.</p>
+  <p>Create one with <code>{"challenge": true}</code> in your API request.</p>
+</div>
+`}
+<script>
+(function() {
+  var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  var saved = localStorage.getItem('peekmd-theme');
+  var theme = saved || (prefersDark ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+  var btn = document.getElementById('theme-toggle');
+  btn.textContent = theme === 'dark' ? 'light' : 'dark';
+  btn.addEventListener('click', function() {
+    var c = document.documentElement.getAttribute('data-theme');
+    var n = c === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', n);
+    btn.textContent = n === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('peekmd-theme', n);
+  });
+})();
+</script>
+</body>
+</html>`;
+}
+
 export function landingTemplate(baseUrl: string): string {
   const description = 'POST markdown to an API, get a shareable link to a beautifully rendered page. Built for AI agents, bots, and developers who need to share rich content instantly.';
   return `<!DOCTYPE html>

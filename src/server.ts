@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import type { PageStore } from './types.js';
 import { renderMarkdown } from './render.js';
 import { sanitize } from './sanitize-node.js';
-import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate, keyManagementTemplate } from './template.js';
+import { pageTemplate, notFoundTemplate, landingTemplate, checkoutSuccessTemplate, keyManagementTemplate, challengeTemplate, challengeCreateTemplate, challengeListTemplate } from './template.js';
 import { MemoryStore } from './memory-store.js';
 import { detectTier, validateTierTtl, TIER_CONFIGS, X402_PRICE_DISPLAY, SUBSCRIPTION_PLANS, isValidPlan } from './tiers.js';
 import type { SubscriptionPlan } from './tiers.js';
@@ -122,9 +122,9 @@ export function buildApp(opts?: AppOptions) {
 
   // POST /api/create
   app.post<{
-    Body: { markdown: string; ttl?: number };
+    Body: { markdown: string; ttl?: number; challenge?: boolean };
   }>('/api/create', async (request, reply) => {
-    const { markdown, ttl } = request.body ?? {};
+    const { markdown, ttl, challenge } = request.body ?? {};
 
     // Validate markdown
     if (typeof markdown !== 'string' || markdown.trim().length === 0) {
@@ -239,12 +239,17 @@ export function buildApp(opts?: AppOptions) {
 
     await store.set({ slug, html, markdown, createdAt: now, expiresAt, tier });
 
+    if (challenge && tier !== 'free' && 'setChallenge' in store) {
+      await (store as MemoryStore).setChallenge(slug, { keeperCount: 0, viewCount: 0, extendSec: ttlSec || 300, createdAt: now });
+    }
+
     const url = `${baseUrl}/${slug}`;
     return reply.status(201).send({
       url,
       slug,
       expiresAt: expiresAt === 0 ? null : new Date(expiresAt).toISOString(),
       tier,
+      challenge: !!(challenge && tier !== 'free'),
     });
   });
 
@@ -263,11 +268,25 @@ export function buildApp(opts?: AppOptions) {
   // POST /api/burn/:slug
   app.post<{ Params: { slug: string } }>('/api/burn/:slug', async (request, reply) => {
     const { slug } = request.params;
+    if ('getChallenge' in store) {
+      const challenge = await (store as MemoryStore).getChallenge(slug);
+      if (challenge) return reply.status(403).send({ error: 'challenge pages cannot be burned' });
+    }
     const burned = await store.burn(slug);
     if (!burned) {
       return reply.status(404).send({ error: 'page not found' });
     }
     return reply.status(200).send({ ok: true });
+  });
+
+  // GET /api/challenge/:slug — live stats for challenge pages
+  app.get<{ Params: { slug: string } }>('/api/challenge/:slug', async (request, reply) => {
+    const { slug } = request.params;
+    if (!('getChallenge' in store)) return reply.status(404).send({ error: 'not a challenge page' });
+    const meta = await (store as MemoryStore).getChallenge(slug);
+    if (!meta) return reply.status(404).send({ error: 'not a challenge page' });
+    const page = await store.get(slug);
+    return reply.send({ keeperCount: meta.keeperCount, viewCount: meta.viewCount, expiresAt: page?.expiresAt ?? 0 });
   });
 
   // ─── Stripe Webhooks ─────────────────────────────────────────
@@ -506,6 +525,20 @@ export function buildApp(opts?: AppOptions) {
     return reply.send(successResponse);
   });
 
+  // GET /challenge — challenge creation form
+  app.get('/challenge', async (_request, reply) => {
+    return reply.type('text/html').send(challengeCreateTemplate({ baseUrl }));
+  });
+
+  // GET /challenges — public challenge leaderboard
+  app.get('/challenges', async (_request, reply) => {
+    if ('listChallenges' in store) {
+      const challenges = await (store as MemoryStore).listChallenges();
+      return reply.type('text/html').send(challengeListTemplate({ challenges, baseUrl }));
+    }
+    return reply.type('text/html').send(challengeListTemplate({ challenges: [], baseUrl }));
+  });
+
   // GET /api/pricing — show pricing info for all tiers
   app.get('/api/pricing', async (_request, reply) => {
     const plans = Object.entries(SUBSCRIPTION_PLANS).map(([key, config]) => ({
@@ -552,10 +585,31 @@ export function buildApp(opts?: AppOptions) {
       return reply.status(404).type('text/html').send(notFoundTemplate());
     }
 
+    // Challenge page logic
+    if ('getChallenge' in store) {
+      const ms = store as MemoryStore;
+      const challenge = await ms.getChallenge(slug);
+      if (challenge) {
+        const ip = request.ip;
+        const { meta } = await ms.challengeVisit(slug, ip);
+        const updated = await store.get(slug);
+        return reply.type('text/html').send(challengeTemplate({
+          html: page.html,
+          slug: page.slug,
+          expiresAt: updated?.expiresAt ?? page.expiresAt,
+          baseUrl,
+          keeperCount: meta.keeperCount,
+          viewCount: meta.viewCount,
+          createdAt: meta.createdAt,
+          extendSec: meta.extendSec,
+        }));
+      }
+    }
+
     const tier = page.tier ?? 'free';
     const showAdBanner = TIER_CONFIGS[tier].showAdBanner;
 
-    const html = pageTemplate({
+    const renderedHtml = pageTemplate({
       html: page.html,
       slug: page.slug,
       expiresAt: page.expiresAt,
@@ -563,7 +617,7 @@ export function buildApp(opts?: AppOptions) {
       showAdBanner,
     });
 
-    return reply.type('text/html').send(html);
+    return reply.type('text/html').send(renderedHtml);
   });
 
   return app;

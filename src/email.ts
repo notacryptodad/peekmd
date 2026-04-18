@@ -36,6 +36,11 @@ export async function sendApiKeyEmail(opts: SendApiKeyEmailOpts): Promise<boolea
     Keep this key safe — it grants access to your peekmd account.
     If you need to rotate your key, visit your billing portal.
   </p>
+  <div style="margin-top: 24px; padding: 20px; background: linear-gradient(135deg, #f97316, #ef4444); border-radius: 10px; text-align: center;">
+    <p style="color: white; font-size: 16px; font-weight: 700; margin-bottom: 8px;">🔥 Try the Keep Alive Challenge</p>
+    <p style="color: rgba(255,255,255,0.85); font-size: 13px; margin-bottom: 12px;">Create a page that stays alive as long as people keep visiting it!</p>
+    <a href="${baseUrl || 'https://peekmd.dev'}/challenge?key=${apiKey}" style="display: inline-block; background: white; color: #ef4444; padding: 10px 24px; border-radius: 6px; font-weight: 700; text-decoration: none; font-size: 14px;">Create a Challenge →</a>
+  </div>
 </div>`;
 
   const textBody = `Welcome to peekmd!
@@ -51,7 +56,11 @@ curl -X POST ${baseUrl || 'https://peekmd.dev'}/api/create \\
   -H "Authorization: Bearer ${apiKey}" \\
   -d '{"markdown": "# Hello\\nYour first page!", "ttl": 3600}'
 
-Keep this key safe — it grants access to your peekmd account.`;
+Keep this key safe — it grants access to your peekmd account.
+
+🔥 Try the Keep Alive Challenge!
+Create a page that stays alive as long as people keep visiting it:
+${baseUrl || 'https://peekmd.dev'}/challenge?key=${apiKey}`;
 
   try {
     const res = await fetch('https://api.resend.com/emails', {

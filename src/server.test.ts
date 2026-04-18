@@ -1337,4 +1337,90 @@ describe('peekmd API', () => {
       expect(JSON.parse(res.body)).toEqual({ status: 'ok' });
     });
   });
+
+  describe('Challenge pages', () => {
+    it('creates a challenge page with paid tier', async () => {
+      const { server } = stripeApp('pro');
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Challenge', ttl: 300, challenge: true },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.challenge).toBe(true);
+    });
+
+    it('ignores challenge flag on free tier', async () => {
+      const server = app();
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        payload: { markdown: '# Challenge', ttl: 60, challenge: true },
+      });
+      expect(res.statusCode).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.challenge).toBe(false);
+    });
+
+    it('renders challenge template with stats', async () => {
+      const { server } = stripeApp('pro');
+      const create = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Challenge', ttl: 300, challenge: true },
+      });
+      const { slug } = JSON.parse(create.body);
+      const res = await server.inject({ method: 'GET', url: `/${slug}` });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('Keep Alive Challenge');
+      expect(res.body).toContain('Keepers');
+      expect(res.body).toContain('Views');
+    });
+
+    it('increments keeper count for unique IPs', async () => {
+      const { server } = stripeApp('pro');
+      const create = await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Challenge', ttl: 300, challenge: true },
+      });
+      const { slug } = JSON.parse(create.body);
+
+      // First visit
+      const r1 = await server.inject({ method: 'GET', url: `/${slug}`, remoteAddress: '1.1.1.1' });
+      expect(r1.body).toContain('Keep Alive Challenge');
+
+      // Second visit same IP — should not increment keeper
+      await server.inject({ method: 'GET', url: `/${slug}`, remoteAddress: '1.1.1.1' });
+
+      // Third visit different IP — should increment keeper
+      const r3 = await server.inject({ method: 'GET', url: `/${slug}`, remoteAddress: '2.2.2.2' });
+      expect(r3.body).toContain('Keep Alive Challenge');
+    });
+
+    it('GET /challenges shows leaderboard', async () => {
+      const { server } = stripeApp('pro');
+      // Create a challenge page
+      await server.inject({
+        method: 'POST',
+        url: '/api/create',
+        headers: { authorization: 'Bearer sk_test_valid' },
+        payload: { markdown: '# Leaderboard Test', ttl: 300, challenge: true },
+      });
+      const res = await server.inject({ method: 'GET', url: '/challenges' });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('Challenge Leaderboard');
+    });
+
+    it('GET /challenges shows empty state when no challenges', async () => {
+      const server = app();
+      const res = await server.inject({ method: 'GET', url: '/challenges' });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('No active challenges yet');
+    });
+  });
 });
