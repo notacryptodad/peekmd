@@ -36,7 +36,7 @@ The `url` is immediately shareable. Free pages expire in 5 minutes.
 - Dark/light mode toggle on rendered pages
 - Countdown timer and burn-after-reading support
 - DOMPurify sanitization for safe HTML output
-- Three payment tiers: free, Stripe (metered), x402 (crypto)
+- Three payment tiers: free, Stripe (subscription), x402 (crypto)
 - Deploy anywhere: self-hosted (Fastify) or Cloudflare Workers
 
 ## Self-Hosted
@@ -72,8 +72,9 @@ peekmd [options]
 | `HOST` | Bind address (default: 0.0.0.0) |
 | `BASE_URL` | Base URL for generated links |
 | `STRIPE_SECRET_KEY` | Stripe secret key (enables paid tier) |
-| `STRIPE_PRICE_ID` | Stripe price ID for metered billing |
-| `STRIPE_METER_EVENT_NAME` | Stripe meter event name |
+| `STRIPE_BASIC_PRICE_ID` | Stripe price ID for Basic plan |
+| `STRIPE_PRO_PRICE_ID` | Stripe price ID for Pro plan |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
 | `STRIPE_API_KEYS` | Pre-seeded API keys (JSON) |
 | `X402_WALLET_ADDRESS` | Wallet address for x402 payments |
 | `X402_NETWORK` | Network for x402 (default: base-sepolia) |
@@ -95,7 +96,9 @@ Create a rendered markdown page.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `markdown` | string | yes | Markdown content (max 500 KB) |
-| `ttl` | number | no | Time-to-live in seconds (0 = permanent, default: 300) |
+| `ttl` | number | no | Time-to-live in seconds (0 = permanent*, default: 300) |
+
+\* Permanent pages are kept alive as long as they are accessed at least once every 90 days. Pages with no views for 90 days are automatically removed.
 
 ### `GET /:slug`
 
@@ -118,8 +121,10 @@ Health check.
 | Tier | Max TTL | Ad Banner | Auth | Price |
 |------|---------|-----------|------|-------|
 | free | 5 min | yes | none | free |
-| stripe | unlimited | no | `Authorization: Bearer sk_...` | $0.001-$0.01/page |
-| x402 | unlimited | no | `X-PAYMENT` header | 0.01 USDC/page |
+| stripe | unlimited | no | `Authorization: Bearer sk_...` | $9–$29/mo |
+| x402 | unlimited | no | `X-PAYMENT` header | 0.02 USDC/page |
+
+Stripe offers two plans: **Basic** ($9/mo, 500 pages, 30-day max TTL) and **Pro** ($29/mo, 5,000 pages, permanent TTL). Permanent pages with no views for 90 days are automatically removed.
 
 ## Development
 

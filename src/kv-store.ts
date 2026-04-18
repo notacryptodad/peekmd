@@ -1,9 +1,12 @@
 /**
  * Cloudflare KV page store.
  * Uses native KV TTL for auto-expiry — no sweep needed.
+ * Permanent pages get a rolling 90-day TTL, refreshed on each read.
  */
 
 import type { Page, PageStore } from './types.js';
+
+export const PERMANENT_TTL_SEC = 90 * 24 * 60 * 60; // 90 days
 
 export interface KVNamespace {
   get(key: string, options?: { type?: string }): Promise<string | null>;
@@ -23,16 +26,19 @@ export class KVStore implements PageStore {
     if (page.expiresAt > 0 && page.expiresAt <= Date.now()) {
       return undefined;
     }
+    // Refresh rolling 90-day TTL for permanent pages
+    if (page.expiresAt === 0) {
+      this.kv.put(`page:${slug}`, raw, { expirationTtl: PERMANENT_TTL_SEC }).catch(() => {});
+    }
     return page;
   }
 
   async set(page: Page): Promise<void> {
-    // Permanent pages (expiresAt = 0) have no KV TTL
-    const opts: { expirationTtl?: number } =
-      page.expiresAt > 0
-        ? { expirationTtl: Math.max(1, Math.ceil((page.expiresAt - Date.now()) / 1000)) }
-        : {};
-    await this.kv.put(`page:${page.slug}`, JSON.stringify(page), opts);
+    const ttl =
+      page.expiresAt === 0
+        ? PERMANENT_TTL_SEC
+        : Math.max(1, Math.ceil((page.expiresAt - Date.now()) / 1000));
+    await this.kv.put(`page:${page.slug}`, JSON.stringify(page), { expirationTtl: ttl });
   }
 
   async burn(slug: string): Promise<boolean> {

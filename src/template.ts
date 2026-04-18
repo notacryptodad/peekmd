@@ -741,10 +741,11 @@ console.log(url);
         <div class="plan-price">$29<span class="period"> /mo</span></div>
         <ul class="plan-details">
           <li>5,000 pages / month</li>
-          <li>Permanent page TTL</li>
+          <li>Permanent page TTL*</li>
           <li>No ads</li>
           <li>API key access</li>
         </ul>
+        <p style="font-size:0.75em;color:#888;margin:0.5em 0 0;">* Pages with no views for 90 days are automatically removed.</p>
         <button class="plan-cta plan-cta-paid" onclick="fetch('${baseUrl}/api/stripe/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:'pro'})}).then(r=>r.json()).then(d=>{if(d.url)window.location=d.url;else alert(d.message||d.error)}).catch(()=>alert('Checkout unavailable'))">Subscribe</button>
       </div>
     </div>
