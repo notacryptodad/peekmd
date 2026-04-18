@@ -460,7 +460,10 @@ export default {
             apiKey: result.apiKey,
             plan: result.plan,
             baseUrl,
-          }).catch(() => {}); // fire-and-forget
+          }).then(ok => console.log(`Email to ${result.email}: ${ok ? 'sent' : 'failed'}`))
+            .catch(err => console.error('Email error:', err));
+        } else {
+          console.log(`Email skipped: email=${result.email ?? 'null'}, resendKey=${env.RESEND_API_KEY ? 'set' : 'missing'}`);
         }
         return html(checkoutSuccessTemplate({ apiKey: result.apiKey, baseUrl }));
       } catch (err) {
