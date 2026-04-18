@@ -20,8 +20,8 @@ RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
   -d '{
     "rules": [
       {
-        "description": "API burst limit - 10 req/10s per IP on create and challenge endpoints",
-        "expression": "((http.request.uri.path eq \"/api/create\" and http.request.method eq \"POST\") or starts_with(http.request.uri.path, \"/api/challenge/\"))",
+        "description": "API burst limit - 10 req/10s per IP on write endpoints",
+        "expression": "((http.request.uri.path in {\"/api/create\" \"/api/demo\"} and http.request.method eq \"POST\") or starts_with(http.request.uri.path, \"/api/challenge/\"))",
         "action": "block",
         "ratelimit": {
           "characteristics": ["cf.colo.id", "ip.src"],
