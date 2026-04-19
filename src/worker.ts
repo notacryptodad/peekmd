@@ -108,10 +108,9 @@ function paymentRequiredResponse(
     upgrade: {
       stripe: {
         description:
-          'Subscribe for metered billing. After checkout you receive an API key ' +
+          'Subscribe for $9–$29/mo. After checkout you receive an API key ' +
           'to pass as Authorization: Bearer sk_... on all requests.',
         checkoutUrl: `${baseUrl}/api/stripe/checkout`,
-        pricePerPage: '$0.001–$0.01 depending on TTL',
       },
       x402: isX402Configured(x402Config)
         ? {
@@ -328,11 +327,6 @@ function handlePricing(baseUrl: string, x402Config: Partial<X402Config>): Respon
       maxTtlSeconds: 'unlimited',
       adBanner: false,
       plans,
-      pricePerPage: {
-        upTo1Hour: '$0.001',
-        upTo24Hours: '$0.005',
-        permanent: '$0.01',
-      },
       auth: 'Authorization: Bearer sk_...',
       checkoutUrl: `${baseUrl}/api/stripe/checkout`,
     },
@@ -347,7 +341,7 @@ function handlePricing(baseUrl: string, x402Config: Partial<X402Config>): Respon
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const store = new KVStore(env.PAGES);
     const url = new URL(request.url);
     const baseUrl = env.BASE_URL || url.origin;
@@ -453,15 +447,17 @@ export default {
         const result = await stripe.handleCheckoutCallback(sessionId);
         // Send API key email in the background (non-blocking)
         if (result.email && env.RESEND_API_KEY) {
-          sendApiKeyEmail({
-            resendApiKey: env.RESEND_API_KEY,
-            from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
-            to: result.email,
-            apiKey: result.apiKey,
-            plan: result.plan,
-            baseUrl,
-          }).then(ok => console.log(`Email to ${result.email}: ${ok ? 'sent' : 'failed'}`))
-            .catch(err => console.error('Email error:', err));
+          ctx.waitUntil(
+            sendApiKeyEmail({
+              resendApiKey: env.RESEND_API_KEY,
+              from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
+              to: result.email,
+              apiKey: result.apiKey,
+              plan: result.plan,
+              baseUrl,
+            }).then(ok => console.log(`Email to ${result.email}: ${ok ? 'sent' : 'failed'}`))
+              .catch(err => console.error('Email error:', err))
+          );
         } else {
           console.log(`Email skipped: email=${result.email ?? 'null'}, resendKey=${env.RESEND_API_KEY ? 'set' : 'missing'}`);
         }
@@ -541,14 +537,16 @@ export default {
         const result = await stripe.rotateApiKey(keyRecord.stripeCustomerId);
         const info = await stripe.getKeyInfo(keyRecord.stripeCustomerId);
         if (info?.email && env.RESEND_API_KEY) {
-          sendRotationEmail({
-            resendApiKey: env.RESEND_API_KEY,
-            from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
-            to: info.email,
-            newApiKey: result.newKey,
-            oldKeyPrefix: result.oldKeyPrefix,
-            baseUrl,
-          }).catch(() => {});
+          ctx.waitUntil(
+            sendRotationEmail({
+              resendApiKey: env.RESEND_API_KEY,
+              from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
+              to: info.email,
+              newApiKey: result.newKey,
+              oldKeyPrefix: result.oldKeyPrefix,
+              baseUrl,
+            }).catch(() => {})
+          );
         }
         return json({
           newKey: result.newKey,
@@ -598,13 +596,15 @@ export default {
       const info = await stripe.recoverKeyByEmail(email);
       if (!info) return json(successResponse);
       if (info.email && env.RESEND_API_KEY) {
-        sendRecoveryEmail({
-          resendApiKey: env.RESEND_API_KEY,
-          from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
-          to: info.email,
-          apiKey: info.key,
-          baseUrl,
-        }).catch(() => {});
+        ctx.waitUntil(
+          sendRecoveryEmail({
+            resendApiKey: env.RESEND_API_KEY,
+            from: env.RESEND_FROM_EMAIL ?? 'peekmd <keys@peekmd.dev>',
+            to: info.email,
+            apiKey: info.key,
+            baseUrl,
+          }).catch(() => {})
+        );
       }
       return json(successResponse);
     }

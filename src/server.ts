@@ -57,10 +57,9 @@ function paymentRequiredResponse(
     upgrade: {
       stripe: {
         description:
-          'Subscribe for metered billing. After checkout you receive an API key ' +
+          'Subscribe for $9–$29/mo. After checkout you receive an API key ' +
           'to pass as Authorization: Bearer sk_... on all requests.',
         checkoutUrl: `${baseUrl}/api/stripe/checkout`,
-        pricePerPage: '$0.001–$0.01 depending on TTL',
       },
       x402: isX402Configured(x402Config)
         ? {
@@ -558,11 +557,6 @@ export function buildApp(opts?: AppOptions) {
         maxTtlSeconds: 'unlimited',
         adBanner: false,
         plans,
-        pricePerPage: {
-          upTo1Hour: '$0.001',
-          upTo24Hours: '$0.005',
-          permanent: '$0.01',
-        },
         auth: 'Authorization: Bearer sk_...',
         checkoutUrl: `${baseUrl}/api/stripe/checkout`,
       },

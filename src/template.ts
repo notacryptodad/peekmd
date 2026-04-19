@@ -3,6 +3,8 @@
  * Features: dark/light mode, styled tables, countdown timer, burn button.
  */
 
+import { MARKED_INLINE_JS } from './marked-inline.js';
+
 export function pageTemplate(opts: {
   html: string;
   slug: string;
@@ -491,6 +493,7 @@ html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
     <a id="share-x" target="_blank" rel="noopener" title="Share on X"><svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>X</a>
     <a id="share-threads" target="_blank" rel="noopener" title="Share on Threads"><svg viewBox="0 0 24 24"><path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.59 12c.025 3.086.718 5.496 2.057 7.164 1.432 1.781 3.632 2.695 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.343-.783-.99-1.42-1.834-1.856.026-.327.037-.663.03-1.007-.03-1.49-.332-2.755-.899-3.763-.546-.97-1.33-1.696-2.332-2.159-1.06-.49-2.32-.737-3.746-.737-2.07 0-3.706.553-4.864 1.643-1.2 1.13-1.835 2.726-1.889 4.744l2.119.037c.04-1.468.47-2.573 1.279-3.283.78-.685 1.9-1.022 3.355-1.022 1.1 0 2.05.18 2.828.535.7.32 1.23.78 1.575 1.368.36.614.56 1.432.583 2.584-1.14-.175-2.35-.237-3.6-.183-1.69.073-3.15.46-4.342 1.15-1.28.74-2.17 1.8-2.648 3.148-.24.678-.36 1.395-.36 2.14 0 1.573.614 2.95 1.728 3.872 1.072.886 2.48 1.335 4.188 1.335 1.678 0 3.148-.467 4.365-1.388 1.04-.787 1.79-1.848 2.236-3.16.61.653.96 1.47 1.072 2.464.18 1.606-.36 3.2-1.567 4.624C18.07 22.88 15.636 23.98 12.186 24zm.088-5.412c-1.2 0-2.148-.32-2.822-.953-.627-.588-.944-1.37-.944-2.326 0-.442.068-.86.203-1.24.31-.876.95-1.573 1.903-2.073.88-.462 2.026-.71 3.41-.737 1.19-.027 2.34.04 3.43.2-.09 1.645-.527 2.97-1.3 3.94-.87 1.09-2.1 1.643-3.66 1.643-.073 0-.147-.002-.22-.006z"/></svg>Threads</a>
     <a id="share-fb" target="_blank" rel="noopener" title="Share on Facebook"><svg viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>Facebook</a>
+    <button id="share-ig" title="Copy link for Instagram"><svg viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>Instagram</button>
     <button onclick="navigator.clipboard.writeText(window.location.href).then(function(){this.textContent='✓ Copied'}.bind(this))" title="Copy link">📋 Copy</button>
   </div>
 </div>
@@ -517,6 +520,13 @@ html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   document.getElementById('share-x').href = 'https://x.com/intent/tweet?text=' + text + '&url=' + url;
   document.getElementById('share-threads').href = 'https://threads.net/intent/post?text=' + text + ' ' + url;
   document.getElementById('share-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + url;
+  document.getElementById('share-ig').addEventListener('click', function() {
+    var caption = decodeURIComponent(text) + ' ' + decodeURIComponent(url);
+    navigator.clipboard.writeText(caption).then(function() {
+      document.getElementById('share-ig').innerHTML = '✓ Copied for IG';
+      setTimeout(function() { document.getElementById('share-ig').innerHTML = '<svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>Instagram'; }, 2000);
+    });
+  });
 
   // Created ago
   var created = ${createdAt};
@@ -587,19 +597,51 @@ export function challengeCreateTemplate(opts: { baseUrl: string }): string {
 <title>🔥 Create a Challenge — peekmd</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-:root { --bg: #ffffff; --fg: #1a1a2e; --fg-muted: #6c7086; --border: #e0e0e0; --link: #1e90ff; --table-stripe: #f5f5f5; --accent: #f97316; }
-[data-theme="dark"] { --bg: #1e1e2e; --fg: #cdd6f4; --fg-muted: #6c7086; --border: #313244; --link: #89b4fa; --table-stripe: #181825; --accent: #fab387; }
+:root { --bg: #ffffff; --fg: #1a1a2e; --fg-muted: #6c7086; --border: #e0e0e0; --link: #2563eb; --table-stripe: #f5f5f5; --accent: #f97316; --code-bg: #f3f4f6; --pre-bg: #1e1e2e; --pre-fg: #cdd6f4; --blockquote-border: #d1d5db; --blockquote-bg: #f9fafb; }
+[data-theme="dark"] { --bg: #1e1e2e; --fg: #cdd6f4; --fg-muted: #6c7086; --border: #313244; --link: #89b4fa; --table-stripe: #181825; --accent: #fab387; --code-bg: #2d2d44; --pre-bg: #11111b; --pre-fg: #cdd6f4; --blockquote-border: #475569; --blockquote-bg: #1e293b; }
 html { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--fg); }
-body { max-width: 700px; margin: 0 auto; padding: 32px 24px; }
+body { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .brand { font-weight: 700; font-size: 18px; text-decoration: none; color: var(--fg); }
 .btn { background: none; border: 1px solid var(--border); color: var(--fg); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
 h1 { font-size: 1.6em; margin-bottom: 8px; }
 .subtitle { color: var(--fg-muted); margin-bottom: 24px; }
 label { display: block; font-weight: 600; margin-bottom: 6px; margin-top: 16px; }
-textarea { width: 100%; min-height: 200px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--table-stripe); color: var(--fg); font-family: 'SF Mono', Consolas, monospace; font-size: 14px; resize: vertical; }
+textarea { width: 100%; height: 100%; min-height: 300px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--table-stripe); color: var(--fg); font-family: 'SF Mono', Consolas, monospace; font-size: 14px; resize: none; }
 select, input[type="text"] { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--table-stripe); color: var(--fg); font-size: 14px; }
 .form-row { display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }
+.editor-wrap { display: flex; gap: 16px; margin-top: 16px; }
+.editor-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pane-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.pane-header label { margin: 0; }
+.char-count { font-size: 12px; color: var(--fg-muted); }
+.char-count.warn { color: #f59e0b; }
+.char-count.over { color: #dc2626; }
+.preview-pane { flex: 1; min-width: 0; }
+.preview-box { border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; min-height: 300px; overflow-y: auto; max-height: 70vh; line-height: 1.7; }
+.preview-box:empty::before { content: 'Preview will appear here...'; color: var(--fg-muted); font-style: italic; }
+.preview-box h1, .preview-box h2, .preview-box h3, .preview-box h4, .preview-box h5, .preview-box h6 { margin-top: 1.2em; margin-bottom: 0.4em; font-weight: 600; line-height: 1.3; }
+.preview-box h1:first-child, .preview-box h2:first-child, .preview-box h3:first-child { margin-top: 0; }
+.preview-box h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.preview-box h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.preview-box h3 { font-size: 1.2em; }
+.preview-box p { margin: 0.7em 0; }
+.preview-box a { color: var(--link); text-decoration: none; }
+.preview-box img { max-width: 100%; border-radius: 8px; }
+.preview-box hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.preview-box ul, .preview-box ol { padding-left: 2em; margin: 0.7em 0; }
+.preview-box li { margin: 0.2em 0; }
+.preview-box blockquote { border-left: 4px solid var(--blockquote-border); background: var(--blockquote-bg); padding: 10px 14px; margin: 0.8em 0; border-radius: 0 8px 8px 0; }
+.preview-box blockquote p { margin: 0.2em 0; }
+.preview-box code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; font-family: 'SF Mono', Consolas, monospace; }
+.preview-box pre { background: var(--pre-bg); color: var(--pre-fg); padding: 14px 18px; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; line-height: 1.5; }
+.preview-box pre code { background: none; padding: 0; border-radius: 0; font-size: 0.85em; color: inherit; }
+.preview-box table { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+.preview-box th, .preview-box td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.preview-box th { font-weight: 600; background: var(--code-bg); }
+.preview-box tr:nth-child(even) td { background: var(--table-stripe); }
+.preview-box del { text-decoration: line-through; }
+@media (max-width: 768px) { .editor-wrap { flex-direction: column; } .preview-box { max-height: 50vh; } }
 .create-btn { margin-top: 24px; padding: 12px 32px; background: linear-gradient(135deg, #f97316, #ef4444); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; width: 100%; }
 .create-btn:hover { opacity: 0.9; }
 .create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -624,8 +666,21 @@ select, input[type="text"] { padding: 8px 12px; border: 1px solid var(--border);
 <label for="api-key">API Key</label>
 <input type="text" id="api-key" class="api-key-field" placeholder="sk_..." />
 
-<label for="markdown">Content (Markdown)</label>
-<textarea id="markdown" placeholder="# My Challenge Page\n\nShare this page and keep it alive!"></textarea>
+<div class="editor-wrap">
+  <div class="editor-pane">
+    <div class="pane-header">
+      <label for="markdown">Markdown</label>
+      <span class="char-count" id="char-count">0 / 500 KB</span>
+    </div>
+    <textarea id="markdown" placeholder="# My Challenge Page\n\nShare this page and keep it alive!"></textarea>
+  </div>
+  <div class="preview-pane">
+    <div class="pane-header">
+      <label>Preview</label>
+    </div>
+    <div class="preview-box" id="preview"></div>
+  </div>
+</div>
 
 <div class="form-row">
   <div>
@@ -649,10 +704,12 @@ select, input[type="text"] { padding: 8px 12px; border: 1px solid var(--border);
     <a id="result-x" target="_blank" rel="noopener">𝕏 Post</a>
     <a id="result-threads" target="_blank" rel="noopener">Threads</a>
     <a id="result-fb" target="_blank" rel="noopener">Facebook</a>
+    <button id="result-ig">Instagram</button>
     <button id="result-copy">📋 Copy</button>
   </div>
 </div>
 
+<script>${MARKED_INLINE_JS}</script>
 <script>
 (function() {
   var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -673,6 +730,26 @@ select, input[type="text"] { padding: 8px 12px; border: 1px solid var(--border);
   var params = new URLSearchParams(window.location.search);
   var keyParam = params.get('key');
   if (keyParam) document.getElementById('api-key').value = keyParam;
+
+  // ── Live markdown preview via inlined marked.js ──
+  var MAX_BYTES = 512000;
+  marked.setOptions({ gfm: true, breaks: false });
+  var mdEl = document.getElementById('markdown');
+  var previewEl = document.getElementById('preview');
+  var charCountEl = document.getElementById('char-count');
+  var debounceTimer;
+  function updatePreview() {
+    var val = mdEl.value;
+    var bytes = new Blob([val]).size;
+    var kb = (bytes / 1024).toFixed(1);
+    charCountEl.textContent = kb + ' KB / 500 KB';
+    charCountEl.className = 'char-count' + (bytes > MAX_BYTES ? ' over' : bytes > MAX_BYTES * 0.9 ? ' warn' : '');
+    previewEl.innerHTML = val.trim() ? marked.parse(val) : '';
+  }
+  mdEl.addEventListener('input', function() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(updatePreview, 150);
+  });
 
   document.getElementById('create-btn').addEventListener('click', function() {
     var btn = this;
@@ -713,6 +790,10 @@ select, input[type="text"] { padding: 8px 12px; border: 1px solid var(--border);
       document.getElementById('result-x').href = 'https://x.com/intent/tweet?text=' + text + '&url=' + enc;
       document.getElementById('result-threads').href = 'https://threads.net/intent/post?text=' + text + ' ' + enc;
       document.getElementById('result-fb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + enc;
+      document.getElementById('result-ig').onclick = function() {
+        var caption = decodeURIComponent(text) + ' ' + url;
+        navigator.clipboard.writeText(caption).then(function() { this.textContent = '✓ Copied for IG'; setTimeout(function() { this.textContent = 'Instagram'; }.bind(this), 2000); }.bind(this));
+      };
       document.getElementById('result-copy').onclick = function() {
         navigator.clipboard.writeText(url).then(function() { this.textContent = '✓ Copied'; }.bind(this));
       };
